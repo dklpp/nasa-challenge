@@ -215,7 +215,7 @@ function buildOverview(list){
       for(let j=0;j<=Np;j++){ const th = j/Np*2*Math.PI; const x = aU*Math.cos(th)-cU; const y = bU*Math.sin(th); pts.push(new THREE.Vector3(x,0,y)); }
       const ogeom = new THREE.BufferGeometry().setFromPoints(pts);
       const omat  = new THREE.LineBasicMaterial({ color: 0x2c4376, transparent:true, opacity: 0.6 });
-      const orbit = new THREE.LineLoop(ogeom, omat); orbit.rotation.x = -Math.PI/2; gg.add(orbit);
+    const orbit = new THREE.LineLoop(ogeom, omat); orbit.rotation.set(0,0,0); gg.add(orbit);
 
       const rScene = Math.max(0.4, (p.radius_rj? p.radius_rj*0.5 : (p.radius_re||1)*0.15));
       const pgeom = new THREE.SphereGeometry(rScene, 16, 12);
@@ -276,7 +276,12 @@ function buildSystem(sys, selectPi=null){
     for(let i=0;i<=N;i++){ const th = i/N*2*Math.PI; const x = aU*Math.cos(th)-cU; const y = bU*Math.sin(th); pts.push(new THREE.Vector3(x,0,y)); }
     const orbGeom = new THREE.BufferGeometry().setFromPoints(pts);
     const orbMat = new THREE.LineBasicMaterial({ color: ui.dimOrbits.checked? 0x28406f : 0x4066aa, transparent:true, opacity: ui.dimOrbits.checked? 0.35 : 0.8 });
-    const orbit = new THREE.LineLoop(orbGeom, orbMat); orbit.rotation.x = -Math.PI/2; orbit.rotation.z = inc; orbit.userData.index = idx; g.add(orbit); current.orbits.push(orbit);
+  const orbit = new THREE.LineLoop(orbGeom, orbMat);
+  // Keep orbit on XZ plane and tilt around X by inclination so the ring matches the planet's orbital plane
+  orbit.rotation.set(inc, 0, 0);
+  orbit.userData.index = idx;
+  g.add(orbit);
+  current.orbits.push(orbit);
 
     const rScene = planetSceneRadius(p);
     const geom = new THREE.SphereGeometry(rScene, 24, 16);

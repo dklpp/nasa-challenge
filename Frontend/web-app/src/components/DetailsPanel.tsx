@@ -1,11 +1,10 @@
 "use client";
-import React from "react";
 
-type Props = {
+export default function DetailsPanel({
+  detailsRef,
+}: {
   detailsRef: React.RefObject<HTMLDivElement | null>;
-};
-
-export function DetailsPanel({ detailsRef }: Props) {
+}) {
   return (
     <>
       <h2>Details</h2>
@@ -19,5 +18,3 @@ export function DetailsPanel({ detailsRef }: Props) {
     </>
   );
 }
-
-export default DetailsPanel;

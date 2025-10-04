@@ -37,23 +37,24 @@ body {
   --danger:#ff7b7b;
   --ok:#7bffaa;
 }
-html,body{height:100%;margin:0;background:radial-gradient(60% 80% at 50% 20%, #0a1433 0%, #050a19 60%, #020611 100%); color:var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;}
+html,body{height:100%;margin:0;overflow:hidden;background:radial-gradient(60% 80% at 50% 20%, #0a1433 0%, #050a19 60%, #020611 100%); color:var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;}
 #app{display:grid; grid-template-columns: 320px 1fr 360px; height:100vh;}
 /* Left Sidebar */
-#left{background:var(--panel2); border-right:1px solid #162258; padding:12px 12px 8px; display:flex; flex-direction:column; gap:10px}
+#left{background:var(--panel2); border-right:1px solid #162258; padding:12px 12px 8px; display:flex; flex-direction:column; gap:10px; overflow:hidden; min-height:0}
+.leftSticky{position:sticky; top:0; background:var(--panel2); padding-bottom:8px; z-index:1; border-bottom:1px solid #152355}
 #left h1{font-size:16px; margin:0 0 6px; letter-spacing:.5px}
 .search{display:flex; gap:8px}
 .search input{flex:1; background:#0c1531; border:1px solid #1a2a66; color:var(--ink); padding:8px 10px; border-radius:8px}
 .filters{display:grid; gap:10px; grid-template-columns:1fr 1fr}
 .toggle{display:flex; align-items:center; gap:6px; font-size:12px}
-.list{flex:1; overflow:auto; border-top:1px solid #152355; padding-top:6px}
+.list{flex:1; overflow:auto; padding-top:6px}
 .sys{padding:8px; border:1px solid #192a64; border-radius:8px; margin-bottom:8px; cursor:pointer; background:#0b142e}
 .sys:hover{background:#0e1a3c}
 .sys .name{font-weight:600}
 .sys .meta{font-size:12px; color:var(--muted)}
 
 /* Center 3D */
-#center{position:relative;}
+#center{position:relative; height:100%; overflow:hidden}
 #hud{position:absolute; left:10px; top:10px; display:flex; gap:10px; align-items:center; background:rgba(10,16,40,.45); border:1px solid #1b2b63; padding:6px 8px; border-radius:10px; backdrop-filter: blur(4px)}
 #hud label{font-size:12px; color:var(--muted)}
 #hud .badge{font-size:11px; padding:2px 6px; border:1px solid #27407c; border-radius:999px; color:#cfe1ff}

@@ -2,10 +2,10 @@
 export const AU_TO_U = 120;
 
 // Map stellar Teff (3000–8000K) to a blue→red-ish color via HSL
-export function teffColor(T: number, THREE: typeof import('three')){
+export function teffColor(T: number, THREE: typeof import('three')): any{
   const clamped = Math.max(3000, Math.min(8000, T));
   const h = ((clamped - 3000) / 7000) * 0.7; // 0..0.7 (roughly blue→yellow)
-  return new (THREE as any).Color().setHSL(h, 1.0, 0.6) as import('three').Color;
+  return new (THREE as any).Color().setHSL(h, 1.0, 0.6);
 }
 
 // Optional logarithmic scaling for orbit radii

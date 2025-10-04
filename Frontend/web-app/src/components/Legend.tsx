@@ -1,14 +1,17 @@
 "use client";
-import React from "react";
-
-export function Legend() {
+export default function Legend({ line1, line2 }: {
+  line1?: React.ReactNode;
+  line2?: React.ReactNode;
+}) {
   return (
     <div id="legend">
-      Size ∝ radius • Color ∝ T<sub>eff</sub>
+      {line1 ?? (
+        <>
+          Size ∝ radius • Color ∝ T<sub>eff</sub>
+        </>
+      )}
       <br />
-      Speed via Kepler's 2nd law
+      {line2 ?? <>Speed via Kepler's 2nd law</>}
     </div>
   );
 }
-
-export default Legend;

@@ -1,13 +1,14 @@
 "use client";
-import React from "react";
+
 import type { System } from "../app/data";
 
-type Props = {
+export default function SystemsList({
+  systems,
+  onSelect,
+}: {
   systems: ReadonlyArray<System>;
   onSelect: (s: System) => void;
-};
-
-export function SystemsList({ systems, onSelect }: Props) {
+}) {
   return (
     <div id="sysList" className="list">
       {systems.map((s) => (
@@ -21,5 +22,3 @@ export function SystemsList({ systems, onSelect }: Props) {
     </div>
   );
 }
-
-export default SystemsList;

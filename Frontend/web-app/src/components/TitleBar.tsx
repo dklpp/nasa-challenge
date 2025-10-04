@@ -1,9 +1,12 @@
 "use client";
-import React from "react";
 
-type Props = { system: string | null; sub: string };
-
-export function TitleBar({ system, sub }: Props) {
+export default function TitleBar({
+  system,
+  sub,
+}: {
+  system: string | null;
+  sub: string;
+}) {
   return (
     <div id="titlebar">
       <div className="system">{system ?? "—"}</div>
@@ -11,5 +14,3 @@ export function TitleBar({ system, sub }: Props) {
     </div>
   );
 }
-
-export default TitleBar;
