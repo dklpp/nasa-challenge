@@ -24,7 +24,7 @@
         <button id="tourBtn" title="Auto tour">Tour</button>
       </div>
       <div class="filters">
-        <label class="toggle"><input type="checkbox" id="exSizes" checked/> Exaggerate sizes</label>
+        <label class="toggle"><input type="checkbox" id="exSizes"/> Exaggerate sizes</label>
         <label class="toggle"><input type="checkbox" id="logScale" checked/> Log orbit scale</label>
         <label class="toggle"><input type="checkbox" id="showHZ" /> Habitable zone</label>
         <label class="toggle"><input type="checkbox" id="dimOrbits" /> Dim orbits</label>
@@ -37,14 +37,20 @@
         <label>Speed</label>
         <input id="speed" type="range" min="0" max="5" step="0.01" value="1"/>
         <span id="speedVal" class="badge">1.00×</span>
+        <label style="margin-left:8px">Size</label>
+        <input id="sizeScale" type="range" min="0.05" max="1.00" step="0.01" value="0.12"/>
+        <span id="sizeVal" class="badge">0.12×</span>
         <span id="testBadge" class="badge">Tests: …</span>
+        <span id="modeBadge" class="badge">Explore</span>
+        <button id="exploreBtn">Explore</button>
         <button id="resetCam">Reset view</button>
       </div>
       <div id="titlebar">
         <div class="system">—</div>
         <div class="sub">Click a system → click a planet</div>
       </div>
-      <div id="legend">Size ∝ radius • Color ∝ T<sub>eff</sub><br/>Speed via Kepler's 2nd law</div>
+      <div id="legend">X: log₁₀(Period, days) • Y: log₁₀(Radius, R⊕)
+      <br/>Color ≈ star Tₑff • Size ≈ planet radius</div>
       <div id="toast" style="display:none"></div>
     </main>
 
