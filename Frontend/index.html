@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Transitarium — NASA Eyes–style System Viewer</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <!-- Import map so bare specifiers like 'three' resolve in the browser -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <aside id="left">
+      <h1>Systems</h1>
+      <div class="search">
+        <input id="q" placeholder="Search system or planet..." />
+        <button id="tourBtn" title="Auto tour">Tour</button>
+      </div>
+      <div class="filters">
+        <label class="toggle"><input type="checkbox" id="exSizes" checked/> Exaggerate sizes</label>
+        <label class="toggle"><input type="checkbox" id="logScale" checked/> Log orbit scale</label>
+        <label class="toggle"><input type="checkbox" id="showHZ" /> Habitable zone</label>
+        <label class="toggle"><input type="checkbox" id="dimOrbits" /> Dim orbits</label>
+      </div>
+      <div id="sysList" class="list"></div>
+    </aside>
+
+    <main id="center">
+      <div id="hud">
+        <label>Speed</label>
+        <input id="speed" type="range" min="0" max="5" step="0.01" value="1"/>
+        <span id="speedVal" class="badge">1.00×</span>
+        <span id="testBadge" class="badge">Tests: …</span>
+        <button id="resetCam">Reset view</button>
+      </div>
+      <div id="titlebar">
+        <div class="system">—</div>
+        <div class="sub">Click a system → click a planet</div>
+      </div>
+      <div id="legend">Size ∝ radius • Color ∝ T<sub>eff</sub><br/>Speed via Kepler's 2nd law</div>
+      <div id="toast" style="display:none"></div>
+    </main>
+
+    <aside id="right">
+      <h2>Details</h2>
+      <div id="details">Select a planet to see parameters and evidence.</div>
+      <div class="thumbs" id="thumbs">
+        <div class="thumb">Phase‑folded light curve (placeholder)</div>
+        <div class="thumb">BLS periodogram (placeholder)</div>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
