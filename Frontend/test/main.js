@@ -24,6 +24,7 @@ const ui = {
   toast: document.getElementById('toast'),
   testBadge: document.getElementById('testBadge'),
   exploreBtn: document.getElementById('exploreBtn'),
+  universeBtn: document.getElementById('universeBtn'),
   modeBadge: document.getElementById('modeBadge'),
 };
 
@@ -215,7 +216,7 @@ function buildOverview(list){
       for(let j=0;j<=Np;j++){ const th = j/Np*2*Math.PI; const x = aU*Math.cos(th)-cU; const y = bU*Math.sin(th); pts.push(new THREE.Vector3(x,0,y)); }
       const ogeom = new THREE.BufferGeometry().setFromPoints(pts);
       const omat  = new THREE.LineBasicMaterial({ color: 0x2c4376, transparent:true, opacity: 0.6 });
-    const orbit = new THREE.LineLoop(ogeom, omat); orbit.rotation.set(0,0,0); gg.add(orbit);
+      const orbit = new THREE.LineLoop(ogeom, omat); orbit.rotation.x = -Math.PI/2; gg.add(orbit);
 
       const rScene = Math.max(0.4, (p.radius_rj? p.radius_rj*0.5 : (p.radius_re||1)*0.15));
       const pgeom = new THREE.SphereGeometry(rScene, 16, 12);
@@ -276,12 +277,7 @@ function buildSystem(sys, selectPi=null){
     for(let i=0;i<=N;i++){ const th = i/N*2*Math.PI; const x = aU*Math.cos(th)-cU; const y = bU*Math.sin(th); pts.push(new THREE.Vector3(x,0,y)); }
     const orbGeom = new THREE.BufferGeometry().setFromPoints(pts);
     const orbMat = new THREE.LineBasicMaterial({ color: ui.dimOrbits.checked? 0x28406f : 0x4066aa, transparent:true, opacity: ui.dimOrbits.checked? 0.35 : 0.8 });
-  const orbit = new THREE.LineLoop(orbGeom, orbMat);
-  // Keep orbit on XZ plane and tilt around X by inclination so the ring matches the planet's orbital plane
-  orbit.rotation.set(inc, 0, 0);
-  orbit.userData.index = idx;
-  g.add(orbit);
-  current.orbits.push(orbit);
+    const orbit = new THREE.LineLoop(orbGeom, orbMat); orbit.rotation.x = -Math.PI/2; orbit.rotation.z = inc; orbit.userData.index = idx; g.add(orbit); current.orbits.push(orbit);
 
     const rScene = planetSceneRadius(p);
     const geom = new THREE.SphereGeometry(rScene, 24, 16);
@@ -344,8 +340,10 @@ function activeSystem(){ return systems.find(s => s.name === ui.titleSystem.text
 
 // Buttons
 ui.exploreBtn?.addEventListener('click', ()=> buildExplore());
+ui.universeBtn?.addEventListener('click', ()=> buildUniverse3D());
 ui.resetCam?.addEventListener('click', ()=> { 
   if(mode==='explore'){ camera.position.set(0, 900, 1); controls.target.set(0,0,0); controls.update(); }
+  if(mode==='universe'){ camera.position.set(0, 900, 900); controls.target.set(0,0,0); controls.update(); }
   if(mode==='system'){ 
     const maxA = Math.max(...current.planets.map(m => m.userData.aU), 60);
     const z = Math.max(180, maxA * 2.2);
@@ -383,6 +381,10 @@ renderer.domElement.addEventListener('pointerdown', (e)=>{
   if(mode==='system'){
     const hits = ray.intersectObjects(current.planets, false);
     if(hits.length){ selectPlanet(hits[0].object); }
+  }
+  if(mode==='universe' && universe.mesh){
+    const hits = ray.intersectObject(universe.mesh, false);
+    if(hits.length){ const id = hits[0].instanceId; if(id!=null){ const d = universe.idx[id]; buildSystem(systems[d.si], d.pi); } }
   }
 });
 
@@ -429,6 +431,97 @@ function tick(){
   renderer.render(scene, camera);
 }
 
+
+// -------------------- Universe 3D (all planets in 3D parameter cube) --------------------
+let universe = { mesh:null, box:null, idx:[], domain:null };
+
+function clearUniverse(){
+  if(universe.mesh){ scene.remove(universe.mesh); universe.mesh.geometry.dispose(); universe.mesh.material.dispose(); universe.mesh=null; }
+  if(universe.box){ scene.remove(universe.box); universe.box.traverse(o=>{o.geometry?.dispose?.(); o.material?.dispose?.();}); universe.box=null; }
+}
+
+function buildUniverse3D(){
+  // Hide other clouds
+  if(explore && explore.mesh) scene.remove(explore.mesh);
+  if(explore && explore.axis) scene.remove(explore.axis);
+  clearOverview && clearOverview();
+  clearSystem();
+  clearUniverse();
+  mode='universe'; if(ui.modeBadge) ui.modeBadge.textContent='3D';
+  ui.titleSystem.textContent='All Planets — 3D';
+  ui.titleSub.textContent='X=log₁₀(P days), Y=log₁₀(R R⊕), Z=log₁₀(a AU) • click a point';
+
+  const idx = flattenPlanets(systems);
+  // Domains
+  const P = idx.filter(d=>d.P>0).map(d=>Math.log10(d.P));
+  const R = idx.filter(d=>d.R>0).map(d=>Math.log10(d.R));
+  const A = idx.filter(d=>d.A>0).map(d=>Math.log10(d.A));
+  const xMin = Math.min(-1, ...(P.length?P:[-1])), xMax = Math.max(3, ...(P.length?P:[3]));
+  const yMin = Math.min(-0.3, ...(R.length?R:[-0.3])), yMax = Math.max(1.5, ...(R.length?R:[1.5]));
+  const zMin = Math.min(-2.0, ...(A.length?A:[-2])), zMax = Math.max(0.8, ...(A.length?A:[0.8]));
+  const W=1600, H=900, D=1200;
+
+  const mapX = v => -W/2 + ( (Math.log10(v)-xMin)/(xMax-xMin) ) * W;
+  const mapY = v => -H/2 + ( (Math.log10(v)-yMin)/(yMax-yMin) ) * H;
+  const mapZ = v => -D/2 + ( (Math.log10(v)-zMin)/(zMax-zMin) ) * D;
+
+  // Instanced spheres
+  const count = Math.min(idx.length, 10000);
+  const geom = new THREE.SphereGeometry(1, 12, 10);
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent:true, opacity:0.95, depthWrite:false });
+  const mesh = new THREE.InstancedMesh(geom, mat, count);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+  for(let i=0;i<count;i++){
+    const d = idx[i];
+    const s = Math.max(0.6, Math.sqrt(d.R||1) * 0.9);
+    const x = mapX(d.P);
+    const y = mapY(d.R);
+    const z = mapZ(Math.max(d.A||0.01, 0.01));
+    const m = new THREE.Matrix4().compose(
+      new THREE.Vector3(x, y, z),
+      new THREE.Quaternion(),
+      new THREE.Vector3(s, s, s)
+    );
+    mesh.setMatrixAt(i, m);
+    const c = teffColor(d.teff, THREE);
+    mesh.setColorAt(i, c);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.instanceColor.needsUpdate = true;
+  scene.add(mesh);
+  universe.mesh = mesh;
+  universe.idx = idx;
+  universe.domain = {xMin,xMax,yMin,yMax,zMin,zMax,W,H,D};
+
+  // Box/axes
+  const box = new THREE.Group();
+  const edge = new THREE.LineBasicMaterial({ color: 0x6f85c9, transparent:true, opacity:0.5 });
+  const lines = [
+    [[-W/2,-H/2,-D/2],[ W/2,-H/2,-D/2]],
+    [[-W/2, H/2,-D/2],[ W/2, H/2,-D/2]],
+    [[-W/2,-H/2, D/2],[ W/2,-H/2, D/2]],
+    [[-W/2, H/2, D/2],[ W/2, H/2, D/2]],
+    [[-W/2,-H/2,-D/2],[-W/2, H/2,-D/2]],
+    [[ W/2,-H/2,-D/2],[ W/2, H/2,-D/2]],
+    [[-W/2,-H/2, D/2],[-W/2, H/2, D/2]],
+    [[ W/2,-H/2, D/2],[ W/2, H/2, D/2]],
+    [[-W/2,-H/2,-D/2],[-W/2,-H/2, D/2]],
+    [[ W/2,-H/2,-D/2],[ W/2,-H/2, D/2]],
+    [[-W/2, H/2,-D/2],[-W/2, H/2, D/2]],
+    [[ W/2, H/2,-D/2],[ W/2, H/2, D/2]],
+  ];
+  for(const [[x1,y1,z1],[x2,y2,z2]] of lines){
+    const g = new THREE.BufferGeometry().setFromPoints([ new THREE.Vector3(x1,y1,z1), new THREE.Vector3(x2,y2,z2) ]);
+    box.add(new THREE.Line(g, edge));
+  }
+  scene.add(box);
+  universe.box = box;
+
+  // Camera
+  camera.position.set(0, Math.max(H, 900), Math.max(D*0.6, 800));
+  controls.target.set(0,0,0); controls.update();
+}
 // Init
 renderList();
 reportTests(ui.testBadge);

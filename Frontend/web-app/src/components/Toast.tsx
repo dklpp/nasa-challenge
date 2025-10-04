@@ -1,5 +1,4 @@
 "use client";
-import React from "react";
 
 export function Toast({ message }: { message: string }) {
   return (

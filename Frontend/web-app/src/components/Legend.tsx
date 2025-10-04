@@ -1,4 +1,5 @@
 "use client";
+
 export default function Legend({ line1, line2 }: {
   line1?: React.ReactNode;
   line2?: React.ReactNode;

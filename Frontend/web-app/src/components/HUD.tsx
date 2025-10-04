@@ -11,9 +11,11 @@ type Props = {
   sizeVal: string;
   modeLabel: string;
   onExplore: () => void;
+  onToggleDetails?: () => void;
+  detailsVisible?: boolean;
 };
 
-export function HUD({ speed, onSpeed, speedVal, onReset, sizeScale, onSizeScale, sizeVal, modeLabel, onExplore }: Props) {
+export function HUD({ speed, onSpeed, speedVal, onReset, sizeScale, onSizeScale, sizeVal, modeLabel, onExplore, onToggleDetails, detailsVisible }: Props) {
   return (
     <div id="hud">
       <label>Speed</label>
@@ -42,11 +44,13 @@ export function HUD({ speed, onSpeed, speedVal, onReset, sizeScale, onSizeScale,
       <span id="sizeVal" className="badge">
         {sizeVal}
       </span>
-      <span id="testBadge" className="badge">
-        Tests: …
-      </span>
       <span id="modeBadge" className="badge">{modeLabel}</span>
       <button id="exploreBtn" onClick={onExplore}>Explore</button>
+      {onToggleDetails && (
+        <button id="toggleDetails" onClick={onToggleDetails}>
+          {detailsVisible ? "Hide details" : "Show details"}
+        </button>
+      )}
       <button id="resetCam" onClick={onReset}>
         Reset view
       </button>

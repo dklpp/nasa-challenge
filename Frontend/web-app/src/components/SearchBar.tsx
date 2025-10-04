@@ -1,13 +1,14 @@
 "use client";
-import React from "react";
 
-type Props = {
+export function SearchBar({
+  q,
+  onChange,
+  onTour,
+}: {
   q: string;
   onChange: (v: string) => void;
   onTour: () => void;
-};
-
-export function SearchBar({ q, onChange, onTour }: Props) {
+}) {
   return (
     <div className="search">
       <input

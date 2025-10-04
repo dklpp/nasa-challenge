@@ -34,7 +34,8 @@ export default function Home() {
   const [active, setActive] = useState<string | null>(null);
   const [titleSub, setTitleSub] = useState("Click a system → click a planet");
   const [sizeScale, setSizeScale] = useState(0.12);
-  const [mode, setMode] = useState<"explore" | "system">("system");
+  const [mode, setMode] = useState<"explore" | "system">("explore");
+  const [showDetails, setShowDetails] = useState(true);
 
   const centerRef = useRef<HTMLDivElement | null>(null);
   const detailsRef = useRef<HTMLDivElement | null>(null);
@@ -58,19 +59,6 @@ export default function Home() {
     );
   }, [q, data]);
 
-  useEffect(() => {
-    // Register tests and report after mount
-    (async () => {
-      try {
-        await import("./tests");
-        const utils = await import("./utils");
-        utils.reportTests?.(document.getElementById("testBadge"));
-      } catch (e) {
-        console.warn("Could not run tests", e);
-      }
-    })();
-  }, []);
-
   // Fetch systems on mount
   useEffect(() => {
     (async () => {
@@ -88,6 +76,17 @@ export default function Home() {
     })();
   }, []);
 
+  // When layout width changes (e.g., toggling details panel), update renderer size
+  useEffect(() => {
+    const s = sceneRef.current;
+    if (!s || !centerRef.current) return;
+    const w = centerRef.current.clientWidth;
+    const h = centerRef.current.clientHeight;
+    s.renderer.setSize(w, h, false);
+    s.camera.aspect = w / h;
+    s.camera.updateProjectionMatrix();
+  }, [showDetails]);
+
   // Initialize Three scene once
   useEffect(() => {
     if (!centerRef.current) return;
@@ -104,8 +103,33 @@ export default function Home() {
     controls.minDistance = 30;
     controls.maxDistance = 1500;
 
-    scene.add(new THREE.AmbientLight(0x506080, 0.4));
+  scene.add(new THREE.AmbientLight(0x506080, 0.5));
+    // Global light to avoid creating hundreds of per-star lights
+    const globalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    globalLight.position.set(300, 450, 350);
+    globalLight.target.position.set(0, 0, 0);
+    scene.add(globalLight);
+    scene.add(globalLight.target);
     // Layered starry background for richer depth
+    // Use a tiny circular sprite so stars render as round points (not squares)
+  let discTex: any = null;
+    function getDiscTexture() {
+      if (discTex) return discTex;
+      const c = document.createElement("canvas");
+      c.width = c.height = 64;
+      const ctx = c.getContext("2d")!;
+      ctx.clearRect(0, 0, 64, 64);
+      ctx.beginPath();
+      ctx.arc(32, 32, 30, 0, Math.PI * 2);
+      const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 30);
+      grad.addColorStop(0, "rgba(255,255,255,1)");
+      grad.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = grad;
+      ctx.fill();
+      discTex = new THREE.CanvasTexture(c);
+      discTex.needsUpdate = true;
+      return discTex;
+    }
     const starField = new THREE.Group();
     function makeStars(
       N: number,
@@ -147,6 +171,8 @@ export default function Home() {
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         sizeAttenuation: true,
+        map: getDiscTexture(),
+        alphaTest: 0.5,
       });
       return new THREE.Points(geom, mat);
     }
@@ -206,10 +232,14 @@ export default function Home() {
       const g = new THREE.Group();
       scene.add(g);
       current.group = g;
+      // Reset camera to a good vantage point on each system build
+      controls.target.set(0, 0, 0);
+      camera.position.set(0, 120, 260);
+      controls.update();
 
       const starCol = teffColor(sys.star.teff, THREE);
       const starGeom = new THREE.SphereGeometry(
-        exSizes ? 10 : Math.max(2, (sys.star as any).radius_rs * 2.5),
+        exSizes ? 10 : Math.max(2, ((sys.star as any).radius_rs ?? 1) * 2.5),
         32,
         16
       );
@@ -245,6 +275,7 @@ export default function Home() {
         current.hz = hzmesh as any;
       }
 
+      let maxAU = 0;
       sys.planets.forEach((p0) => {
         const p = { ...p0 } as Planet;
         const a = Math.max(0.004, p.a_au);
@@ -253,6 +284,7 @@ export default function Home() {
         const bU = aU * Math.sqrt(1 - e * e);
         const cU = Math.sqrt(Math.max(0, aU * aU - bU * bU));
         const inc = THREE.MathUtils.degToRad(p.incl || 0);
+        maxAU = Math.max(maxAU, aU * (1 + e));
 
         const N = 256;
         const pts: any[] = [];
@@ -302,6 +334,14 @@ export default function Home() {
           M: Math.random() * Math.PI * 2,
           name: `${sys.name} ${p.name}`,
         };
+        // Set an initial position so the planet is visible immediately
+        const v0 = trueAnomaly((m as any).userData.M, e);
+        const r0 = (aU * (1 - e * e)) / (1 + e * Math.cos(v0));
+        const x0 = r0 * Math.cos(v0);
+        const y0 = r0 * Math.sin(v0);
+        m.position
+          .set(x0, 0, y0)
+          .applyAxisAngle(new THREE.Vector3(1, 0, 0), inc);
         g.add(m);
         current.planets.push(m);
       });
@@ -310,6 +350,133 @@ export default function Home() {
       setTitleSub(
         `${sys.planets.length} planet(s) • star T_eff ${sys.star.teff}K`
       );
+      // Frame the system based on its size
+      const dist = Math.min(1500, Math.max(120, 90 + maxAU * 0.6));
+      camera.position.set(0, Math.min(400, 40 + maxAU * 0.25), dist);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    }
+
+    function buildExplore(systems: Sys[]) {
+      clearSystem();
+      const g = new THREE.Group();
+      scene.add(g);
+      current.group = g;
+
+      // Earth at the center
+      const earthGeom = new THREE.SphereGeometry(6, 32, 16);
+      const earthMat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(0x2f71ff),
+        emissive: new THREE.Color(0x1f3fb8),
+        emissiveIntensity: 0.5,
+        metalness: 0.1,
+        roughness: 0.6,
+      });
+      const earth = new THREE.Mesh(earthGeom, earthMat);
+      g.add(earth);
+      const earthGlow = new THREE.PointLight(0x3a7cff, 0.6, 150, 2);
+      earthGlow.position.set(0, 0, 0);
+      g.add(earthGlow);
+
+      // Distribute systems around Earth using a Fibonacci sphere
+      const Nsys = systems.length;
+      const R = 950; // radius of distribution sphere
+      const golden = Math.PI * (3 - Math.sqrt(5));
+      let totalPlanets = 0;
+
+      systems.forEach((sys, i) => {
+        const y = 1 - (i / Math.max(1, Nsys - 1)) * 2; // 1..-1
+        const r = Math.sqrt(Math.max(0, 1 - y * y));
+        const theta = golden * i;
+        const x = Math.cos(theta) * r;
+        const z = Math.sin(theta) * r;
+        const pos = new THREE.Vector3(x, y, z).multiplyScalar(R);
+
+        const sg = new THREE.Group();
+        sg.position.copy(pos);
+        g.add(sg);
+
+        // Star
+        const starCol = teffColor(sys.star.teff, THREE);
+        const starGeom = new THREE.SphereGeometry(
+          exSizes ? 7 : Math.max(2, ((sys.star as any).radius_rs ?? 1) * 2.0),
+          24,
+          12
+        );
+        const starMat = new THREE.MeshStandardMaterial({
+          emissive: starCol,
+          emissiveIntensity: 1.2,
+          color: 0x222233,
+          roughness: 0.45,
+          metalness: 0.1,
+        });
+  const starMesh = new THREE.Mesh(starGeom, starMat);
+  sg.add(starMesh);
+
+        // Planets and orbits (lighter geometry for perf)
+        sys.planets.forEach((p0) => {
+          const p = { ...p0 } as Planet;
+          const a = Math.max(0.004, p.a_au);
+          const e = Math.min(0.95, Math.max(0, p.e || 0));
+          const aU = scaleAU(a, logScale);
+          const bU = aU * Math.sqrt(1 - e * e);
+          const cU = Math.sqrt(Math.max(0, aU * aU - bU * bU));
+          const inc = THREE.MathUtils.degToRad(p.incl || 0);
+
+          // Orbit (reduced resolution for performance)
+          const N = 72;
+          const pts: any[] = [];
+          for (let j = 0; j <= N; j++) {
+            const th = (j / N) * 2 * Math.PI;
+            const ox = aU * Math.cos(th) - cU;
+            const oy = bU * Math.sin(th);
+            pts.push(new THREE.Vector3(ox, 0, oy));
+          }
+          const orbGeom = new THREE.BufferGeometry().setFromPoints(pts);
+          const orbMat = new THREE.LineBasicMaterial({
+            color: dimOrbits ? 0x28406f : 0x4066aa,
+            transparent: true,
+            opacity: dimOrbits ? 0.28 : 0.55,
+          });
+          const orbit = new THREE.LineLoop(orbGeom, orbMat);
+          orbit.rotation.set(inc, 0, 0);
+          sg.add(orbit);
+          current.orbits.push(orbit as any);
+
+          // Planet mesh
+          const rScene = exSizes
+            ? Math.max(1.4, p.radius_rj ? p.radius_rj * 5 : (p.radius_re || 0) * 0.7)
+            : Math.max(0.35, p.radius_rj ? p.radius_rj * 1.0 : (p.radius_re || 0) * 0.18);
+          const geom = new THREE.SphereGeometry(rScene, 20, 12);
+          const color = teffColor(sys.star.teff, THREE).clone().offsetHSL(0, 0, -0.15);
+          const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.2, roughness: 0.4 });
+          const m = new THREE.Mesh(geom, mat);
+          (m as any).userData = {
+            ...p,
+            aU,
+            bU,
+            cU,
+            inc,
+            M: Math.random() * Math.PI * 2,
+            name: `${sys.name} ${p.name}`,
+          };
+          const v0 = trueAnomaly((m as any).userData.M, e);
+          const r0 = (aU * (1 - e * e)) / (1 + e * Math.cos(v0));
+          const x0 = r0 * Math.cos(v0);
+          const y0 = r0 * Math.sin(v0);
+          m.position.set(x0, 0, y0).applyAxisAngle(new THREE.Vector3(1, 0, 0), inc);
+          sg.add(m);
+          current.planets.push(m as any);
+        });
+      });
+
+      setActive("Explore");
+      setTitleSub(`${systems.length} systems • click any planet`);
+      // Frame the whole distribution sphere
+      controls.target.set(0, 0, 0);
+      camera.position.set(0, 600, 1200);
+      controls.maxDistance = 2500;
+      controls.update();
     }
 
     function selectPlanet(m: any) {
@@ -317,11 +484,12 @@ export default function Home() {
       current.orbits.forEach(
         (o: any) => ((o.material as any).opacity = dimOrbits ? 0.5 : 0.9)
       );
-      controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.2);
-      camera.position.lerp(
-        new THREE.Vector3(0, 40 + p.aU * 0.08, 90 + p.aU * 0.2),
-        0.2
-      );
+      const wp = new THREE.Vector3();
+      (m as any).getWorldPosition(wp);
+      const camTarget = wp.clone();
+      const camPos = wp.clone().add(new THREE.Vector3(0, 40 + p.aU * 0.08, 90 + p.aU * 0.2));
+      controls.target.lerp(camTarget, 0.25);
+      camera.position.lerp(camPos, 0.25);
       const rows: [string, string][] = [
         ["Planet", p.name],
         ["Orbital period", p.period_days.toFixed(3) + " days"],
@@ -400,14 +568,20 @@ export default function Home() {
       clock,
     } as any;
 
-  // Build initial system and start anim (if available)
-  if (data.length) buildSystem(data[0]);
+  // Build initial scene and start anim
+  if (data.length) {
+    if (mode === "explore") buildExplore(data);
+    else buildSystem(data[0]);
+  }
     tick();
 
     return () => {
       cancelAnimationFrame(sceneRef.current?.raf || 0);
       window.removeEventListener("resize", onResize);
       renderer.dispose();
+      // Remove global light and its target to avoid leaks
+      scene.remove(globalLight);
+      scene.remove(globalLight.target);
       starField.children.forEach((child: any) => {
         child.geometry?.dispose?.();
         child.material?.dispose?.();
@@ -422,7 +596,128 @@ export default function Home() {
   useEffect(() => {
     const s = sceneRef.current;
     if (!s?.current.group) return;
-  const sys = data.find((x) => x.name === active) || data[0];
+    if (mode === "explore") {
+      // Rebuild explore scene using current options
+      // Clear details on rebuild
+      if (detailsRef.current)
+        detailsRef.current.textContent =
+          "Select a planet to see parameters and evidence.";
+      const { scene, current } = s;
+      if (current.group) {
+        scene.remove(current.group);
+        current.group.traverse((obj: any) => {
+          obj.geometry?.dispose?.();
+          obj.material?.dispose?.();
+        });
+        current.group = null as any;
+        current.star = null as any;
+        current.planets = [] as any[];
+        current.orbits = [] as any[];
+        current.hz = null as any;
+      }
+      // Use the initial helper created in init effect via re-running that logic here minimally
+      // Since buildExplore is in closure, replicate minimal rebuild here
+      // We'll reconstruct explore similar to the first build
+      // Build Earth + distributed systems
+      // Inline small builder to avoid refactoring
+  const sceneLocal = s.scene as any;
+  const controls = s.controls as OrbitControls;
+      const g = new THREE.Group();
+      sceneLocal.add(g);
+      s.current.group = g as any;
+      const earthGeom = new THREE.SphereGeometry(6, 32, 16);
+      const earthMat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(0x2f71ff),
+        emissive: new THREE.Color(0x1f3fb8),
+        emissiveIntensity: 0.5,
+        metalness: 0.1,
+        roughness: 0.6,
+      });
+      const earth = new THREE.Mesh(earthGeom, earthMat);
+      g.add(earth);
+      const earthGlow = new THREE.PointLight(0x3a7cff, 0.6, 150, 2);
+      earthGlow.position.set(0, 0, 0);
+      g.add(earthGlow);
+      const Nsys = data.length;
+      const R = 950;
+      const golden = Math.PI * (3 - Math.sqrt(5));
+      data.forEach((sys, i) => {
+        const y = 1 - (i / Math.max(1, Nsys - 1)) * 2;
+        const r = Math.sqrt(Math.max(0, 1 - y * y));
+        const theta = golden * i;
+        const x = Math.cos(theta) * r;
+        const z = Math.sin(theta) * r;
+        const pos = new THREE.Vector3(x, y, z).multiplyScalar(R);
+        const sg = new THREE.Group();
+        sg.position.copy(pos);
+        g.add(sg);
+        const starCol = teffColor(sys.star.teff, THREE);
+        const starGeom = new THREE.SphereGeometry(
+          exSizes ? 7 : Math.max(2, ((sys.star as any).radius_rs ?? 1) * 2.0),
+          24,
+          12
+        );
+        const starMat = new THREE.MeshStandardMaterial({
+          emissive: starCol,
+          emissiveIntensity: 1.2,
+          color: 0x222233,
+          roughness: 0.45,
+          metalness: 0.1,
+        });
+  const starMesh = new THREE.Mesh(starGeom, starMat);
+  sg.add(starMesh);
+        sys.planets.forEach((p0) => {
+          const p = { ...p0 } as any as Planet;
+          const a = Math.max(0.004, p.a_au);
+          const e = Math.min(0.95, Math.max(0, p.e || 0));
+          const aU = scaleAU(a, logScale);
+          const bU = aU * Math.sqrt(1 - e * e);
+          const cU = Math.sqrt(Math.max(0, aU * aU - bU * bU));
+          const inc = THREE.MathUtils.degToRad(p.incl || 0);
+          const N = 72;
+          const pts: any[] = [];
+          for (let j = 0; j <= N; j++) {
+            const th = (j / N) * 2 * Math.PI;
+            const ox = aU * Math.cos(th) - cU;
+            const oy = bU * Math.sin(th);
+            pts.push(new THREE.Vector3(ox, 0, oy));
+          }
+          const orbGeom = new THREE.BufferGeometry().setFromPoints(pts);
+          const orbMat = new THREE.LineBasicMaterial({
+            color: dimOrbits ? 0x28406f : 0x4066aa,
+            transparent: true,
+            opacity: dimOrbits ? 0.28 : 0.55,
+          });
+          const orbit = new THREE.LineLoop(orbGeom, orbMat);
+          orbit.rotation.set(inc, 0, 0);
+          sg.add(orbit);
+          s.current.orbits.push(orbit as any);
+          const rScene = exSizes
+            ? Math.max(1.4, p.radius_rj ? p.radius_rj * 5 : (p.radius_re || 0) * 0.7)
+            : Math.max(0.35, p.radius_rj ? p.radius_rj * 1.0 : (p.radius_re || 0) * 0.18);
+          const geom = new THREE.SphereGeometry(rScene, 20, 12);
+          const color = teffColor(sys.star.teff, THREE).clone().offsetHSL(0, 0, -0.15);
+          const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.2, roughness: 0.4 });
+          const m = new THREE.Mesh(geom, mat);
+          (m as any).userData = { ...p, aU, bU, cU, inc, M: Math.random() * Math.PI * 2, name: `${sys.name} ${p.name}` };
+          const v0 = trueAnomaly((m as any).userData.M, e);
+          const r0 = (aU * (1 - e * e)) / (1 + e * Math.cos(v0));
+          const x0 = r0 * Math.cos(v0);
+          const y0 = r0 * Math.sin(v0);
+          m.position.set(x0, 0, y0).applyAxisAngle(new THREE.Vector3(1, 0, 0), inc);
+          sg.add(m);
+          s.current.planets.push(m as any);
+        });
+      });
+      setActive("Explore");
+      setTitleSub(`${data.length} systems • click any planet`);
+      controls.target.set(0, 0, 0);
+      s.camera.position.set(0, 600, 1200);
+      controls.maxDistance = 2500;
+      controls.update();
+      return;
+    }
+    const sys = data.find((x) => x.name === active) || data[0];
     // Rebuild to apply exSizes/logScale/showHZ changes
     // Clear details on rebuild
     if (detailsRef.current)
@@ -452,7 +747,7 @@ export default function Home() {
       s.current.group = g as any;
       const starCol = teffColor(sys.star.teff, THREE);
       const starGeom = new THREE.SphereGeometry(
-        exSizes ? 10 : Math.max(2, (sys.star as any).radius_rs * 2.5),
+        exSizes ? 10 : Math.max(2, ((sys.star as any).radius_rs ?? 1) * 2.5),
         32,
         16
       );
@@ -486,6 +781,7 @@ export default function Home() {
         g.add(hzmesh);
         s.current.hz = hzmesh as any;
       }
+      let maxAU = 0;
       sys.planets.forEach((p0) => {
         const p = { ...p0 } as Planet;
         const a = Math.max(0.004, p.a_au);
@@ -494,6 +790,7 @@ export default function Home() {
         const bU = aU * Math.sqrt(1 - e * e);
         const cU = Math.sqrt(Math.max(0, aU * aU - bU * bU));
         const inc = THREE.MathUtils.degToRad(p.incl || 0);
+        maxAU = Math.max(maxAU, aU * (1 + e));
         const N = 256;
         const pts: any[] = [];
         for (let i = 0; i <= N; i++) {
@@ -541,6 +838,13 @@ export default function Home() {
           M: Math.random() * Math.PI * 2,
           name: `${sys.name} ${p.name}`,
         };
+        const v0 = trueAnomaly((m as any).userData.M, e);
+        const r0 = (aU * (1 - e * e)) / (1 + e * Math.cos(v0));
+        const x0 = r0 * Math.cos(v0);
+        const y0 = r0 * Math.sin(v0);
+        m.position
+          .set(x0, 0, y0)
+          .applyAxisAngle(new THREE.Vector3(1, 0, 0), inc);
         g.add(m);
         s.current.planets.push(m as any);
       });
@@ -548,10 +852,14 @@ export default function Home() {
       setTitleSub(
         `${sys.planets.length} planet(s) • star T_eff ${sys.star.teff}K`
       );
+      const dist = Math.min(1500, Math.max(120, 90 + maxAU * 0.6));
+      s.camera.position.set(0, Math.min(400, 40 + maxAU * 0.25), dist);
+      s.controls.target.set(0, 0, 0);
+      s.controls.update();
     };
     buildAgain(sys);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exSizes, logScale, showHZ]);
+  }, [exSizes, logScale, showHZ, mode, dimOrbits]);
 
   // Dim orbit material opacity live toggle
   useEffect(() => {
@@ -566,6 +874,8 @@ export default function Home() {
   function handleBuild(sys: Sys) {
     const s = sceneRef.current;
     if (!s) return;
+    // switch to system mode on manual selection
+    if (mode !== "system") setMode("system");
     // Trigger rebuild by toggling a dependency-less rebuild path: reuse the toggle effect
     setActive(sys.name);
     // Quick rebuild using the same path as options change: temporarily nudge state to re-run effect
@@ -584,12 +894,12 @@ export default function Home() {
       current.hz = null as any;
     }
 
-    const g = new THREE.Group();
+  const g = new THREE.Group();
     scene.add(g);
     s.current.group = g as any;
     const starCol = teffColor(sys.star.teff, THREE);
     const starGeom = new THREE.SphereGeometry(
-      exSizes ? 10 : Math.max(2, (sys.star as any).radius_rs * 2.5),
+      exSizes ? 10 : Math.max(2, ((sys.star as any).radius_rs ?? 1) * 2.5),
       32,
       16
     );
@@ -623,6 +933,7 @@ export default function Home() {
       g.add(hzmesh);
       s.current.hz = hzmesh as any;
     }
+    let maxAU = 0;
     sys.planets.forEach((p0) => {
       const p = { ...p0 } as Planet;
       const a = Math.max(0.004, p.a_au);
@@ -631,6 +942,7 @@ export default function Home() {
       const bU = aU * Math.sqrt(1 - e * e);
       const cU = Math.sqrt(Math.max(0, aU * aU - bU * bU));
       const inc = THREE.MathUtils.degToRad(p.incl || 0);
+      maxAU = Math.max(maxAU, aU * (1 + e));
       const N = 256;
       const pts: any[] = [];
       for (let i = 0; i <= N; i++) {
@@ -679,12 +991,26 @@ export default function Home() {
         M: Math.random() * Math.PI * 2,
         name: `${sys.name} ${p.name}`,
       };
+      const v0 = trueAnomaly((m as any).userData.M, e);
+      const r0 = (aU * (1 - e * e)) / (1 + e * Math.cos(v0));
+      const x0 = r0 * Math.cos(v0);
+      const y0 = r0 * Math.sin(v0);
+      m.position
+        .set(x0, 0, y0)
+        .applyAxisAngle(new THREE.Vector3(1, 0, 0), inc);
       g.add(m);
       s.current.planets.push(m as any);
     });
     setTitleSub(
       `${sys.planets.length} planet(s) • star T_eff ${sys.star.teff}K`
     );
+      s.controls.target.set(0, 0, 0);
+      s.camera.position.set(0, 120, 260);
+      s.controls.update();
+    const dist = Math.min(1500, Math.max(120, 90 + maxAU * 0.6));
+    s.camera.position.set(0, Math.min(400, 40 + maxAU * 0.25), dist);
+    s.controls.target.set(0, 0, 0);
+    s.controls.update();
     showToast(`Loaded ${sys.name}`);
   }
 
@@ -714,22 +1040,46 @@ export default function Home() {
   function resetCam() {
     const s = sceneRef.current;
     if (!s) return;
-    s.camera.position.set(0, 120, 260);
-    s.controls.target.set(0, 0, 0);
-    s.controls.update();
+    if (mode === "explore") {
+      s.camera.position.set(0, 600, 1200);
+      s.controls.target.set(0, 0, 0);
+      s.controls.maxDistance = 2500;
+      s.controls.update();
+    } else {
+      s.camera.position.set(0, 120, 260);
+      s.controls.target.set(0, 0, 0);
+      s.controls.update();
+    }
   }
 
   const speedVal = useMemo(() => speed.toFixed(2) + "×", [speed]);
   const sizeVal = useMemo(() => sizeScale.toFixed(2) + "×", [sizeScale]);
   const modeLabel = mode === "explore" ? "Explore" : "System";
 
+  // Fullscreen toggle
+  const [isFS, setIsFS] = useState(false);
+  useEffect(() => {
+    const onFS = () => setIsFS(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFS);
+    return () => document.removeEventListener("fullscreenchange", onFS);
+  }, []);
+  function toggleFullscreen() {
+    const el: any = document.documentElement as any;
+    if (!document.fullscreenElement) {
+      (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen)?.call(el);
+    } else {
+      (document.exitFullscreen || (document as any).webkitExitFullscreen || (document as any).msExitFullscreen)?.call(document);
+    }
+  }
+
   function handleExplore() {
     setMode((m) => (m === "explore" ? "system" : "explore"));
-    showToast("Explore mode is a stub for now");
+    // A toast to indicate mode; actual rebuild handled by options effect and initial init
+    showToast("Toggled view mode");
   }
 
   return (
-    <div id="app">
+    <div id="app" className={showDetails ? "" : "noRight"}>
       <aside id="left">
         <div className="leftSticky">
           <h1>Systems</h1>
@@ -776,10 +1126,18 @@ export default function Home() {
           onExplore={handleExplore}
         />
         <TitleBar system={active} sub={titleSub} />
+        <button
+          id="detailsbtn"
+          title={showDetails ? "Hide details" : "Show details"}
+          aria-pressed={showDetails}
+          onClick={() => setShowDetails((v) => !v)}
+        >
+          {showDetails ? "Hide details" : "Show details"}
+        </button>
         <Legend
           line1={
             mode === "explore" ? (
-              <>X: log₁₀(Period, days) • Y: log₁₀(Radius, R⊕)</>
+              <>Earth at center • Stars with planets distributed in 3D</>
             ) : (
               <>
                 Size ∝ radius • Color ∝ T<sub>eff</sub>
@@ -794,12 +1152,38 @@ export default function Home() {
             )
           }
         />
+        <button
+          id="fsbtn"
+          title={isFS ? "Exit full screen" : "Full screen"}
+          aria-pressed={isFS}
+          onClick={toggleFullscreen}
+        >
+          {isFS ? (
+            // minimize icon
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 3 9 9 3 9" />
+              <polyline points="15 21 15 15 21 15" />
+              <line x1="21" y1="3" x2="14" y2="10" />
+              <line x1="3" y1="21" x2="10" y2="14" />
+            </svg>
+          ) : (
+            // fullscreen icon
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 9 3 3 9 3" />
+              <polyline points="21 15 21 21 15 21" />
+              <line x1="21" y1="3" x2="14" y2="10" />
+              <line x1="3" y1="21" x2="10" y2="14" />
+            </svg>
+          )}
+        </button>
         <Toast message={toast} />
       </main>
 
-      <aside id="right">
-        <DetailsPanel detailsRef={detailsRef} />
-      </aside>
+      {showDetails && (
+        <aside id="right">
+          <DetailsPanel detailsRef={detailsRef} />
+        </aside>
+      )}
     </div>
   );
 }

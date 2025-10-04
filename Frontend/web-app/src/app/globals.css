@@ -25,7 +25,6 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* --- Transitarium test styles (copied from Frontend/test/styles.css) --- */
 :root{
   --bg: #050a19;
   --panel: #0e1733;
@@ -39,7 +38,8 @@ body {
 }
 html,body{height:100%;margin:0;overflow:hidden;background:radial-gradient(60% 80% at 50% 20%, #0a1433 0%, #050a19 60%, #020611 100%); color:var(--ink); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;}
 #app{display:grid; grid-template-columns: 320px 1fr 360px; height:100vh;}
-/* Left Sidebar */
+#app.noRight{grid-template-columns: 320px 1fr 0}
+
 #left{background:var(--panel2); border-right:1px solid #162258; padding:12px 12px 8px; display:flex; flex-direction:column; gap:10px; overflow:hidden; min-height:0}
 .leftSticky{position:sticky; top:0; background:var(--panel2); padding-bottom:8px; z-index:1; border-bottom:1px solid #152355}
 #left h1{font-size:16px; margin:0 0 6px; letter-spacing:.5px}
@@ -53,20 +53,22 @@ html,body{height:100%;margin:0;overflow:hidden;background:radial-gradient(60% 80
 .sys .name{font-weight:600}
 .sys .meta{font-size:12px; color:var(--muted)}
 
-/* Center 3D */
 #center{position:relative; height:100%; overflow:hidden}
-#hud{position:absolute; left:10px; top:10px; display:flex; gap:10px; align-items:center; background:rgba(10,16,40,.45); border:1px solid #1b2b63; padding:6px 8px; border-radius:10px; backdrop-filter: blur(4px)}
+#hud{position:absolute; left:50%; top:56px; transform:translateX(-50%); display:flex; gap:10px; align-items:center; background:rgba(10,16,40,.45); border:1px solid #1b2b63; padding:6px 8px; border-radius:10px; backdrop-filter: blur(4px); z-index:1}
 #hud label{font-size:12px; color:var(--muted)}
 #hud .badge{font-size:11px; padding:2px 6px; border:1px solid #27407c; border-radius:999px; color:#cfe1ff}
 #titlebar{position:absolute; left:50%; top:10px; transform:translateX(-50%); text-align:center}
 #titlebar .system{font-weight:700; letter-spacing:.5px}
 #titlebar .sub{font-size:12px; color:var(--muted)}
-#legend{position:absolute; right:12px; bottom:10px; font-size:12px; color:var(--muted); text-align:right}
+#legend{position:absolute; right:12px; bottom:48px; font-size:12px; color:var(--muted); text-align:right}
+#detailsbtn{position:absolute; right:12px; top:10px; background:#13225a; border:1px solid #1f3172; color:#dfe8ff; border-radius:8px; padding:6px 10px; cursor:pointer}
+#detailsbtn:hover{background:#172a6f}
+#fsbtn{position:absolute; right:12px; bottom:10px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; background:#0d1634; border:1px solid #1f2f6c; border-radius:8px; color:#a6c6ff}
+#fsbtn:hover{background:#12204a}
 #toast{position:absolute; left:50%; bottom:10px; transform:translateX(-50%); font-size:12px; color:#a6c6ff; background:#0d1634; border:1px solid #1f2f6c; padding:6px 8px; border-radius:8px; opacity:.9}
 
 canvas{display:block; width:100%; height:100%}
 
-/* Right panel */
 #right{background:var(--panel); border-left:1px solid #162258; padding:14px; overflow:auto}
 #right h2{font-size:18px; margin:4px 0 8px}
 .row{display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed #1a2a66}
@@ -77,5 +79,3 @@ canvas{display:block; width:100%; height:100%}
 .thumb{height:120px; border-radius:8px; background:linear-gradient(180deg,#0f1a42,#0b122b); border:1px dashed #203166; display:flex; align-items:center; justify-content:center; color:#7f93c8; font-size:12px}
 button{background:#13225a; border:1px solid #1f3172; color:#dfe8ff; border-radius:8px; padding:6px 10px; cursor:pointer}
 button:hover{background:#172a6f}
-
-/* End Transitarium styles */
