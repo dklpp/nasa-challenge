@@ -16,4 +16,7 @@ export type System = {
     mass_ms?: number; // stellar mass (M_sun)
   };
   planets: Planet[];
+  ra?: number; // Right Ascension in degrees
+  dec?: number; // Declination in degrees
+  distance_pc?: number; // Distance in parsecs (if available)
 };

@@ -29,6 +29,32 @@ export function trueAnomaly(M: number, e: number){
   return Math.atan2(sinv, cosv);
 }
 
+// Convert celestial coordinates (RA, Dec) to 3D Cartesian coordinates
+// RA and Dec are in degrees, distance in parsecs
+// Returns position in scene units where 1 parsec = scale units
+export function celestialToCartesian(
+  ra: number, 
+  dec: number, 
+  distance: number = 100, 
+  scale: number = 10
+): { x: number; y: number; z: number } {
+  // Convert degrees to radians
+  const raRad = (ra * Math.PI) / 180;
+  const decRad = (dec * Math.PI) / 180;
+  
+  // Convert to Cartesian coordinates
+  // In equatorial coordinate system:
+  // x points to vernal equinox (RA=0, Dec=0)
+  // y points to RA=90°, Dec=0
+  // z points to north celestial pole (Dec=90°)
+  const d = distance * scale;
+  const x = d * Math.cos(decRad) * Math.cos(raRad);
+  const y = d * Math.sin(decRad);
+  const z = d * Math.cos(decRad) * Math.sin(raRad);
+  
+  return { x, y, z };
+}
+
 // Minimal test harness (ported)
 type TestFn = () => void;
 const _tests: Array<[string, TestFn]> = [];

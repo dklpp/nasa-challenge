@@ -98,6 +98,11 @@ export async function GET() {
         const teff = toNum(pick(row, ["st_teff", "teff", "stteff", "stellar_teff"])) ?? 5800;
         const stRad = toNum(pick(row, ["st_rad", "st_radius", "starradius", "st_rad_rs"])) ?? undefined;
         const stMass = toNum(pick(row, ["st_mass", "st_mass_ms", "starmass"])) ?? undefined;
+        
+        // Coordinate properties
+        const ra = toNum(pick(row, ["ra", "ra_deg", "st_ra"])) ?? undefined;
+        const dec = toNum(pick(row, ["dec", "dec_deg", "st_dec"])) ?? undefined;
+        const distance = toNum(pick(row, ["sy_dist", "st_dist", "distance", "distance_pc"])) ?? undefined;
 
         // Planet details
         let letter = (pick<string>(row, ["pl_letter", "planetletter"]) || "").toString().trim();
@@ -119,6 +124,9 @@ export async function GET() {
           name: host,
           star: { teff, radius_rs: stRad, mass_ms: stMass },
           planets: [],
+          ra,
+          dec,
+          distance_pc: distance,
         };
         // Keep the hottest available teff to avoid overwriting valid values with undefined
         if (!systemsMap.has(host)) {
@@ -127,6 +135,9 @@ export async function GET() {
           sys.star.teff = sys.star.teff || teff;
           if (sys.star.radius_rs === undefined) sys.star.radius_rs = stRad;
           if (sys.star.mass_ms === undefined) sys.star.mass_ms = stMass;
+          if (sys.ra === undefined) sys.ra = ra;
+          if (sys.dec === undefined) sys.dec = dec;
+          if (sys.distance_pc === undefined) sys.distance_pc = distance;
         }
 
         const planet: Planet = {

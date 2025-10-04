@@ -60,7 +60,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:radial-gradient(60% 80
 #titlebar{position:absolute; left:50%; top:10px; transform:translateX(-50%); text-align:center}
 #titlebar .system{font-weight:700; letter-spacing:.5px}
 #titlebar .sub{font-size:12px; color:var(--muted)}
-#legend{position:absolute; right:12px; bottom:48px; font-size:12px; color:var(--muted); text-align:right}
+#legend{position:absolute; right:60px; bottom:16px; font-size:12px; color:var(--muted); text-align:right}
 #detailsbtn{position:absolute; right:12px; top:10px; background:#13225a; border:1px solid #1f3172; color:#dfe8ff; border-radius:8px; padding:6px 10px; cursor:pointer}
 #detailsbtn:hover{background:#172a6f}
 #fsbtn{position:absolute; right:12px; bottom:10px; width:36px; height:36px; display:flex; align-items:center; justify-content:center; background:#0d1634; border:1px solid #1f2f6c; border-radius:8px; color:#a6c6ff}
