@@ -21,11 +21,9 @@
       <h1>Systems</h1>
       <div class="search">
         <input id="q" placeholder="Search system or planet..." />
-        <button id="tourBtn" title="Auto tour">Tour</button>
       </div>
       <div class="filters">
         <label class="toggle"><input type="checkbox" id="exSizes"/> Exaggerate sizes</label>
-        <label class="toggle"><input type="checkbox" id="logScale" checked/> Log orbit scale</label>
         <label class="toggle"><input type="checkbox" id="showHZ" /> Habitable zone</label>
         <label class="toggle"><input type="checkbox" id="dimOrbits" /> Dim orbits</label>
       </div>
@@ -53,15 +51,6 @@
       <br/>Color ≈ star Tₑff • Size ≈ planet radius</div>
       <div id="toast" style="display:none"></div>
     </main>
-
-    <aside id="right">
-      <h2>Details</h2>
-      <div id="details">Select a planet to see parameters and evidence.</div>
-      <div class="thumbs" id="thumbs">
-        <div class="thumb">Phase‑folded light curve (placeholder)</div>
-        <div class="thumb">BLS periodogram (placeholder)</div>
-      </div>
-    </aside>
   </div>
 
   <script type="module" src="./main.js"></script>

@@ -1,0 +1,31 @@
+{
+  "name": "K2-18",
+  "star": {
+    "teff": 3503,
+    "radius_rs": 0.411,
+    "mass_ms": 0.359
+  },
+  "planets": [
+    {
+      "name": "b",
+      "a_au": 0.1429,
+      "period_days": 32.9396,
+      "e": 0.0,
+      "radius_re": 2.61,
+      "incl": 89.56,
+      "pl_eqt": 255
+    },
+    {
+      "name": "c",
+      "a_au": 0.0884,
+      "period_days": 16.4,
+      "e": 0.0,
+      "radius_re": 1.92,
+      "incl": 89.67,
+      "pl_eqt": 320
+    }
+  ],
+  "ra": 173.5649,
+  "dec": 7.5878,
+  "distance_pc": 38.49
+}

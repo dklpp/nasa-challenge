@@ -9,9 +9,11 @@ type Props = {
   onToggleDetails?: () => void;
   detailsVisible?: boolean;
   selectedStar?: string | null;
+  onBackToMain?: () => void;
+  showBackButton?: boolean;
 };
 
-export function HUD({ speed, onSpeed, speedVal, onReset, modeLabel, onToggleDetails, detailsVisible, selectedStar }: Props) {
+export function HUD({ speed, onSpeed, speedVal, onReset, modeLabel, onToggleDetails, detailsVisible, selectedStar, onBackToMain, showBackButton }: Props) {
   return (
     <div id="hud">
       <label>Speed</label>
@@ -29,6 +31,11 @@ export function HUD({ speed, onSpeed, speedVal, onReset, modeLabel, onToggleDeta
       {onToggleDetails && (
         <button id="toggleDetails" onClick={onToggleDetails}>
           {detailsVisible ? "Hide details" : "Show details"}
+        </button>
+      )}
+      {showBackButton && onBackToMain && (
+        <button id="backToMain" className="whitespace-nowrap" onClick={onBackToMain}>
+          ← Back to main view
         </button>
       )}
       <button id="resetCam" className="whitespace-nowrap" onClick={onReset}>

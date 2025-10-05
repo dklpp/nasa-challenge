@@ -3,15 +3,21 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { type Planet as PlanetT, type System as SystemT } from "./data";
-import { teffColor, planetTempColor, scaleAU, trueAnomaly, celestialToCartesian } from "./utils";
+import {
+  teffColor,
+  planetTempColor,
+  scaleAU,
+  trueAnomaly,
+  celestialToCartesian,
+} from "./utils";
 import SearchBar from "../components/SearchBar";
-import FiltersPanel from "../components/FiltersPanel";
 import SystemsList from "../components/SystemsList";
 import HUD from "../components/HUD";
 import TitleBar from "../components/TitleBar";
 import Legend from "../components/Legend";
 import DetailsPanel from "../components/DetailsPanel";
 import Toast from "../components/Toast";
+import UploadModal from "../components/UploadModal";
 
 type Planet = (PlanetT & Partial<{ radius_rj: number; radius_re: number }>) & {
   aU?: number;
@@ -25,29 +31,39 @@ export default function Home() {
   const [q, setQ] = useState("");
   const [data, setData] = useState<SystemT[]>([]);
   const [loading, setLoading] = useState(true);
-  const exSizes = true; 
+  const exSizes = true;
   const [logScale, setLogScale] = useState(true);
   const [showHZ, setShowHZ] = useState(false);
-  const dimOrbits = false; 
+  const dimOrbits = false;
   const [speed, setSpeed] = useState(1);
   const [toast, setToast] = useState("");
   const [active, setActive] = useState<string | null>(null);
   const [titleSub, setTitleSub] = useState("Click a system → click a planet");
   const [sizeScale, setSizeScale] = useState(0.12);
   const [mode, setMode] = useState<"explore" | "system" | "earth">("earth");
-  const [showDetails, setShowDetails] = useState(true);
+  const [showDetails, setShowDetails] = useState(false);
   const [selectedStar, setSelectedStar] = useState<string | null>(null);
+  const [viewingFromSidebar, setViewingFromSidebar] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [customSystemNames, setCustomSystemNames] = useState<Set<string>>(
+    new Set()
+  );
 
   const centerRef = useRef<HTMLDivElement | null>(null);
   const detailsRef = useRef<HTMLDivElement | null>(null);
-  const tourRef = useRef<{ timer: any; idx: number } | null>(null);
   const sceneRef = useRef<any | null>(null);
   const speedRef = useRef(speed);
+  const dataRef = useRef<SystemT[]>([]);
 
   // Sync speed state with ref so animation loop can access current value
   useEffect(() => {
     speedRef.current = speed;
   }, [speed]);
+
+  // Sync data state with ref so selectStar can access current data
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   function showToast(msg: string, t = 1800) {
     setToast(msg);
@@ -102,6 +118,8 @@ export default function Home() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     centerRef.current.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
+    // Set darker space background
+    scene.background = new THREE.Color(0x000508);
     const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 5000);
     camera.position.set(0, 120, 260);
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -130,7 +148,7 @@ export default function Home() {
       if (key in keys) {
         (keys as any)[key] = true;
       }
-      if (e.key === 'Shift') {
+      if (e.key === "Shift") {
         keys.shift = true;
       }
     };
@@ -140,15 +158,15 @@ export default function Home() {
       if (key in keys) {
         (keys as any)[key] = false;
       }
-      if (e.key === 'Shift') {
+      if (e.key === "Shift") {
         keys.shift = false;
       }
     };
 
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
 
-  scene.add(new THREE.AmbientLight(0x506080, 0.8));
+    scene.add(new THREE.AmbientLight(0x506080, 0.8));
     // Global light to avoid creating hundreds of per-star lights
     const globalLight = new THREE.DirectionalLight(0xffffff, 1.2);
     globalLight.position.set(300, 450, 350);
@@ -157,7 +175,7 @@ export default function Home() {
     scene.add(globalLight.target);
     // Layered starry background for richer depth
     // Use a tiny circular sprite so stars render as round points (not squares)
-  let discTex: any = null;
+    let discTex: any = null;
     function getDiscTexture() {
       if (discTex) return discTex;
       const c = document.createElement("canvas");
@@ -178,88 +196,182 @@ export default function Home() {
 
     // Create a procedural planet texture with horizontal gradient bands
     function createPlanetTexture(baseColor: any) {
-      const canvas = document.createElement('canvas');
+      const canvas = document.createElement("canvas");
       canvas.width = 1024;
       canvas.height = 512;
-      const ctx = canvas.getContext('2d')!;
-      
+      const ctx = canvas.getContext("2d")!;
+
       // Create base gradient from top to bottom
       const gradient = ctx.createLinearGradient(0, 0, 0, 512);
-      
+
       // Generate variations of the base color for gradient bands
       const h = { h: 0, s: 0, l: 0 };
       baseColor.getHSL(h);
-      
+
       // Create swirling horizontal bands with color variations
       const numBands = 20;
       for (let i = 0; i < numBands; i++) {
         const t = i / numBands;
-        
+
         // Vary lightness and saturation for each band
         const lightnessVar = 0.1 + Math.sin(t * Math.PI * 4) * 0.15;
         const saturationVar = Math.cos(t * Math.PI * 3) * 0.1;
-        
+
         const color = new THREE.Color().setHSL(
           h.h + Math.sin(t * Math.PI * 2) * 0.05,
           Math.max(0, Math.min(1, h.s + saturationVar)),
           Math.max(0.2, Math.min(0.8, h.l + lightnessVar))
         );
-        
-        gradient.addColorStop(t, `rgb(${Math.floor(color.r * 255)}, ${Math.floor(color.g * 255)}, ${Math.floor(color.b * 255)})`);
+
+        gradient.addColorStop(
+          t,
+          `rgb(${Math.floor(color.r * 255)}, ${Math.floor(
+            color.g * 255
+          )}, ${Math.floor(color.b * 255)})`
+        );
       }
-      
+
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, 1024, 512);
-      
+
       // Add horizontal swirling cloud/storm patterns
-      ctx.globalCompositeOperation = 'overlay';
-      
+      ctx.globalCompositeOperation = "overlay";
+
       // Create multiple wavy bands
       for (let band = 0; band < 12; band++) {
         const yBase = (band / 12) * 512;
         const amplitude = 20 + Math.random() * 30;
         const frequency = 0.005 + Math.random() * 0.005;
         const phase = Math.random() * Math.PI * 2;
-        
+
         ctx.beginPath();
         ctx.moveTo(0, yBase);
-        
+
         for (let x = 0; x <= 1024; x += 2) {
           const y = yBase + Math.sin(x * frequency + phase) * amplitude;
           ctx.lineTo(x, y);
         }
-        
+
         ctx.lineTo(1024, yBase + 60);
         ctx.lineTo(0, yBase + 60);
         ctx.closePath();
-        
+
         // Lighter swirling bands
         const bandColor = new THREE.Color().setHSL(
           h.h + Math.random() * 0.1 - 0.05,
           h.s * 0.6,
           0.7 + Math.random() * 0.2
         );
-        ctx.fillStyle = `rgba(${Math.floor(bandColor.r * 255)}, ${Math.floor(bandColor.g * 255)}, ${Math.floor(bandColor.b * 255)}, 0.3)`;
+        ctx.fillStyle = `rgba(${Math.floor(bandColor.r * 255)}, ${Math.floor(
+          bandColor.g * 255
+        )}, ${Math.floor(bandColor.b * 255)}, 0.3)`;
         ctx.fill();
       }
-      
+
       // Add some darker storm swirls
-      ctx.globalCompositeOperation = 'multiply';
+      ctx.globalCompositeOperation = "multiply";
       for (let i = 0; i < 8; i++) {
         const x = Math.random() * 1024;
         const y = Math.random() * 512;
         const width = 100 + Math.random() * 150;
         const height = 40 + Math.random() * 60;
-        
+
         const darkColor = new THREE.Color().setHSL(h.h, h.s, 0.3);
         const grd = ctx.createRadialGradient(x, y, 0, x, y, width);
-        grd.addColorStop(0, `rgba(${Math.floor(darkColor.r * 255)}, ${Math.floor(darkColor.g * 255)}, ${Math.floor(darkColor.b * 255)}, 0.4)`);
-        grd.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        
+        grd.addColorStop(
+          0,
+          `rgba(${Math.floor(darkColor.r * 255)}, ${Math.floor(
+            darkColor.g * 255
+          )}, ${Math.floor(darkColor.b * 255)}, 0.4)`
+        );
+        grd.addColorStop(1, "rgba(0, 0, 0, 0)");
+
         ctx.fillStyle = grd;
         ctx.fillRect(x - width, y - height, width * 2, height * 2);
       }
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      return texture;
+    }
+
+    // Create a realistic star texture with surface details
+    function createStarTexture(baseColor: any) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1024;
+      canvas.height = 512;
+      const ctx = canvas.getContext("2d")!;
+
+      const h = { h: 0, s: 0, l: 0 };
+      baseColor.getHSL(h);
+
+      // Base color with subtle radial gradient
+      const centerGrad = ctx.createRadialGradient(512, 256, 0, 512, 256, 512);
+      const brightColor = new THREE.Color().setHSL(h.h, Math.max(0.4, h.s * 0.8), Math.min(0.85, h.l * 1.2));
+      const dimColor = new THREE.Color().setHSL(h.h, Math.max(0.5, h.s * 0.9), Math.max(0.6, h.l * 0.9));
       
+      centerGrad.addColorStop(0, `rgb(${Math.floor(brightColor.r * 255)}, ${Math.floor(brightColor.g * 255)}, ${Math.floor(brightColor.b * 255)})`);
+      centerGrad.addColorStop(1, `rgb(${Math.floor(dimColor.r * 255)}, ${Math.floor(dimColor.g * 255)}, ${Math.floor(dimColor.b * 255)})`);
+      ctx.fillStyle = centerGrad;
+      ctx.fillRect(0, 0, 1024, 512);
+
+      // Add granulation (surface texture) - small cells across the surface
+      ctx.globalCompositeOperation = "overlay";
+      for (let i = 0; i < 300; i++) {
+        const x = Math.random() * 1024;
+        const y = Math.random() * 512;
+        const size = 8 + Math.random() * 20;
+        const brightness = 0.5 + Math.random() * 0.5;
+        
+        const cellColor = new THREE.Color().setHSL(h.h, h.s * 0.7, brightness);
+        const grd = ctx.createRadialGradient(x, y, 0, x, y, size);
+        grd.addColorStop(0, `rgba(${Math.floor(cellColor.r * 255)}, ${Math.floor(cellColor.g * 255)}, ${Math.floor(cellColor.b * 255)}, 0.6)`);
+        grd.addColorStop(1, "rgba(0, 0, 0, 0)");
+        
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Add larger hotspots (active regions)
+      ctx.globalCompositeOperation = "screen";
+      for (let i = 0; i < 25; i++) {
+        const x = Math.random() * 1024;
+        const y = Math.random() * 512;
+        const size = 30 + Math.random() * 60;
+        
+        const hotColor = new THREE.Color().setHSL(h.h + (Math.random() - 0.5) * 0.05, Math.max(0.6, h.s), Math.min(0.95, h.l * 1.3));
+        const grd = ctx.createRadialGradient(x, y, 0, x, y, size);
+        grd.addColorStop(0, `rgba(${Math.floor(hotColor.r * 255)}, ${Math.floor(hotColor.g * 255)}, ${Math.floor(hotColor.b * 255)}, 0.5)`);
+        grd.addColorStop(0.5, `rgba(${Math.floor(hotColor.r * 255)}, ${Math.floor(hotColor.g * 255)}, ${Math.floor(hotColor.b * 255)}, 0.2)`);
+        grd.addColorStop(1, "rgba(0, 0, 0, 0)");
+        
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Add darker sunspots
+      ctx.globalCompositeOperation = "multiply";
+      for (let i = 0; i < 15; i++) {
+        const x = Math.random() * 1024;
+        const y = Math.random() * 512;
+        const size = 15 + Math.random() * 40;
+        
+        const spotColor = new THREE.Color().setHSL(h.h, h.s * 0.5, h.l * 0.4);
+        const grd = ctx.createRadialGradient(x, y, 0, x, y, size);
+        grd.addColorStop(0, `rgba(${Math.floor(spotColor.r * 255)}, ${Math.floor(spotColor.g * 255)}, ${Math.floor(spotColor.b * 255)}, 0.7)`);
+        grd.addColorStop(0.6, `rgba(${Math.floor(spotColor.r * 255)}, ${Math.floor(spotColor.g * 255)}, ${Math.floor(spotColor.b * 255)}, 0.3)`);
+        grd.addColorStop(1, "rgba(0, 0, 0, 0)");
+        
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       const texture = new THREE.CanvasTexture(canvas);
       texture.needsUpdate = true;
       return texture;
@@ -303,25 +415,58 @@ export default function Home() {
         opacity: opts.opacity,
         vertexColors: true,
         depthWrite: false,
+        depthTest: true,
         blending: THREE.AdditiveBlending,
         sizeAttenuation: true,
         map: getDiscTexture(),
         alphaTest: 0.5,
       });
-      return new THREE.Points(geom, mat);
+      const points = new THREE.Points(geom, mat);
+      // Render stars in background by setting renderOrder lower
+      points.renderOrder = -1;
+      return points;
     }
+    // Dense field of tiny distant stars - ABSOLUTELY INSANE DENSITY! 🌌
     starField.add(
-      makeStars(5500, 2200, { size: 0.75, opacity: 0.36, warmChance: 0.14 })
+      makeStars(80000, 2800, { size: 0.18, opacity: 0.1, warmChance: 0.1 })
     );
     starField.add(
-      makeStars(2500, 1800, { size: 1.2, opacity: 0.5, warmChance: 0.2 })
+      makeStars(60000, 2600, { size: 0.3, opacity: 0.18, warmChance: 0.11 })
     );
     starField.add(
-      makeStars(700, 1400, { size: 1.6, opacity: 0.7, warmChance: 0.22 })
+      makeStars(50000, 2400, { size: 0.45, opacity: 0.25, warmChance: 0.13 })
     );
-    // Sparse bright stars for emphasis
     starField.add(
-      makeStars(220, 1200, { size: 2.0, opacity: 0.85, warmChance: 0.25 })
+      makeStars(35000, 2100, { size: 0.6, opacity: 0.32, warmChance: 0.15 })
+    );
+    starField.add(
+      makeStars(25000, 1850, { size: 0.75, opacity: 0.4, warmChance: 0.17 })
+    );
+    starField.add(
+      makeStars(18000, 1600, { size: 0.9, opacity: 0.48, warmChance: 0.19 })
+    );
+    starField.add(
+      makeStars(12000, 1400, { size: 1.05, opacity: 0.54, warmChance: 0.21 })
+    );
+    // Medium stars for depth
+    starField.add(
+      makeStars(8000, 1200, { size: 1.2, opacity: 0.62, warmChance: 0.23 })
+    );
+    starField.add(
+      makeStars(5000, 1000, { size: 1.35, opacity: 0.68, warmChance: 0.25 })
+    );
+    starField.add(
+      makeStars(3000, 850, { size: 1.5, opacity: 0.75, warmChance: 0.27 })
+    );
+    starField.add(
+      makeStars(1500, 700, { size: 1.7, opacity: 0.82, warmChance: 0.29 })
+    );
+    // Bright stars for emphasis
+    starField.add(
+      makeStars(800, 600, { size: 2.0, opacity: 0.88, warmChance: 0.31 })
+    );
+    starField.add(
+      makeStars(400, 500, { size: 2.4, opacity: 0.94, warmChance: 0.33 })
     );
     scene.add(starField);
 
@@ -374,23 +519,53 @@ export default function Home() {
       controls.update();
 
       const starCol = teffColor(sys.star.teff, THREE);
-      const starGeom = new THREE.SphereGeometry(
-        exSizes ? 10 : Math.max(2, ((sys.star as any).radius_rs ?? 1) * 2.5),
-        32,
-        16
-      );
+      // Scale star size based on stellar radius in solar radii (st_rad)
+      const stellarRadius = sys.star.radius_rs ?? 1; // Default to 1 solar radius if not available
+      const starSize = exSizes
+        ? Math.max(3, stellarRadius * 6)
+        : Math.max(1.5, stellarRadius * 1.8);
+      const starGeom = new THREE.SphereGeometry(starSize, 64, 64);
+      
+      // Create realistic star texture
+      const starTexture = createStarTexture(starCol);
+      
       const starMat = new THREE.MeshStandardMaterial({
+        map: starTexture,
         emissive: starCol,
-        emissiveIntensity: 1.5,
-        color: 0x222233,
-        roughness: 0.4,
-        metalness: 0.1,
+        emissiveIntensity: 0.8,
+        color: starCol,
+        roughness: 1.0,
+        metalness: 0.0,
       });
       const starMesh = new THREE.Mesh(starGeom, starMat);
-      starMesh.userData = { systemName: sys.name, type: 'star' };
+      starMesh.userData = { systemName: sys.name, type: "star" };
       g.add(starMesh);
       current.star = starMesh;
       current.stars.push(starMesh);
+      
+      // Add glow layers for the star
+      const glowGeom1 = new THREE.SphereGeometry(starSize * 1.15, 32, 32);
+      const glowMat1 = new THREE.MeshBasicMaterial({
+        color: starCol,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.BackSide,
+        blending: THREE.AdditiveBlending,
+      });
+      const glow1 = new THREE.Mesh(glowGeom1, glowMat1);
+      g.add(glow1);
+      
+      const glowGeom2 = new THREE.SphereGeometry(starSize * 1.35, 32, 32);
+      const glowMat2 = new THREE.MeshBasicMaterial({
+        color: starCol,
+        transparent: true,
+        opacity: 0.15,
+        side: THREE.BackSide,
+        blending: THREE.AdditiveBlending,
+      });
+      const glow2 = new THREE.Mesh(glowGeom2, glowMat2);
+      g.add(glow2);
+      
       const lamp = new THREE.PointLight(starCol.getHex(), 2.2, 0, 2);
       lamp.position.set(0, 0, 0);
       g.add(lamp);
@@ -434,9 +609,10 @@ export default function Home() {
         }
         const orbGeom = new THREE.BufferGeometry().setFromPoints(pts);
         const orbMat = new THREE.LineBasicMaterial({
-          color: dimOrbits ? 0x28406f : 0x4066aa,
+          color: 0x5588dd, // Brighter blue color for better visibility
           transparent: true,
-          opacity: dimOrbits ? 0.35 : 0.7,
+          opacity: 0.8, // Always visible with good opacity
+          linewidth: 2, // Thicker line (Note: linewidth > 1 may not work on all platforms)
         });
         const orbit = new THREE.LineLoop(orbGeom, orbMat);
         // Keep orbit geometry in XZ plane and tilt around X by inclination to match planet motion
@@ -455,10 +631,10 @@ export default function Home() {
             );
         const geom = new THREE.SphereGeometry(rScene, 24, 16);
         const color = planetTempColor(p.pl_eqt, THREE);
-        
+
         // Create gradient texture for the planet
         const planetTexture = createPlanetTexture(color);
-        
+
         const mat = new THREE.MeshStandardMaterial({
           map: planetTexture,
           metalness: 0.2,
@@ -471,7 +647,7 @@ export default function Home() {
           bU,
           cU,
           inc,
-          M: Math.random() * Math.PI * 2,
+          M: 0, // Start all planets at periastron (closest approach) for consistency
           name: `${sys.name} ${p.name}`,
         };
         // Set an initial position so the planet is visible immediately
@@ -506,57 +682,67 @@ export default function Home() {
       current.group = g;
 
       // The Sun at the center with fiery appearance
-      const sunGeom = new THREE.SphereGeometry(10, 64, 64);
-      
-      // Create a fiery sun material
+      const sunGeom = new THREE.SphereGeometry(7, 64, 64);
+
+      // Create a realistic sun texture
+      const sunColor = new THREE.Color(0xffa500); // Orange base color
+      const sunTexture = createStarTexture(sunColor);
+
       const sunMat = new THREE.MeshStandardMaterial({
+        map: sunTexture,
         emissive: new THREE.Color(0xff4400),
-        emissiveIntensity: 2.5,
+        emissiveIntensity: 1.5,
         color: new THREE.Color(0xff6600),
         roughness: 1.0,
         metalness: 0,
       });
-      
+
       const sunMesh = new THREE.Mesh(sunGeom, sunMat);
-      sunMesh.userData = { systemName: 'Solar System', type: 'star' };
+      sunMesh.userData = { systemName: "Solar System", type: "star" };
       g.add(sunMesh);
       current.star = sunMesh; // Store for animation
       current.stars.push(sunMesh);
-      
+
       // Add solar flares/prominences using particle system
       const flareGeom = new THREE.BufferGeometry();
       const flareCount = 2000;
       const flarePositions = new Float32Array(flareCount * 3);
       const flareColors = new Float32Array(flareCount * 3);
       const flareSizes = new Float32Array(flareCount);
-      
+
       for (let i = 0; i < flareCount; i++) {
         // Position particles on and around sun surface
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1);
         const radius = 10 + Math.random() * 3; // Extend slightly beyond surface
-        
+
         flarePositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
         flarePositions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
         flarePositions[i * 3 + 2] = radius * Math.cos(phi);
-        
+
         // Color variation from bright yellow to deep orange-red
         const colorMix = Math.random();
         const r = 1.0;
         const g = 0.3 + colorMix * 0.5;
         const b = colorMix * 0.2;
-        
+
         flareColors[i * 3] = r;
         flareColors[i * 3 + 1] = g;
         flareColors[i * 3 + 2] = b;
-        
+
         flareSizes[i] = Math.random() * 1.5 + 0.5;
       }
-      
-      flareGeom.setAttribute('position', new THREE.BufferAttribute(flarePositions, 3));
-      flareGeom.setAttribute('color', new THREE.BufferAttribute(flareColors, 3));
-      flareGeom.setAttribute('size', new THREE.BufferAttribute(flareSizes, 1));
-      
+
+      flareGeom.setAttribute(
+        "position",
+        new THREE.BufferAttribute(flarePositions, 3)
+      );
+      flareGeom.setAttribute(
+        "color",
+        new THREE.BufferAttribute(flareColors, 3)
+      );
+      flareGeom.setAttribute("size", new THREE.BufferAttribute(flareSizes, 1));
+
       const flareMat = new THREE.PointsMaterial({
         size: 0.8,
         vertexColors: true,
@@ -565,11 +751,11 @@ export default function Home() {
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       });
-      
+
       const flares = new THREE.Points(flareGeom, flareMat);
       g.add(flares);
       (current as any).sunFlares = flares; // Store for animation
-      
+
       // Inner fire layer
       const fireGeom1 = new THREE.SphereGeometry(11.5, 32, 32);
       const fireMat1 = new THREE.MeshBasicMaterial({
@@ -581,7 +767,7 @@ export default function Home() {
       });
       const fire1 = new THREE.Mesh(fireGeom1, fireMat1);
       g.add(fire1);
-      
+
       // Middle flame layer
       const fireGeom2 = new THREE.SphereGeometry(13.5, 32, 32);
       const fireMat2 = new THREE.MeshBasicMaterial({
@@ -593,7 +779,7 @@ export default function Home() {
       });
       const fire2 = new THREE.Mesh(fireGeom2, fireMat2);
       g.add(fire2);
-      
+
       // Outer heat haze
       const fireGeom3 = new THREE.SphereGeometry(16, 32, 32);
       const fireMat3 = new THREE.MeshBasicMaterial({
@@ -605,10 +791,10 @@ export default function Home() {
       });
       const fire3 = new THREE.Mesh(fireGeom3, fireMat3);
       g.add(fire3);
-      
+
       // Store fire layers for animation
       (current as any).fireLayers = [fire1, fire2, fire3];
-      
+
       // Intense Sun light with orange tint
       const sunLight = new THREE.PointLight(0xff7733, 5.0, 0, 1.2);
       sunLight.position.set(0, 0, 0);
@@ -617,19 +803,19 @@ export default function Home() {
       // Earth orbiting the Sun at ~1 AU
       const earthDistance = 150; // 1 AU in scene units
       const earthGeom = new THREE.SphereGeometry(6.4, 64, 32);
-      
+
       // Create a simple procedural Earth texture using a canvas
-      const earthCanvas = document.createElement('canvas');
+      const earthCanvas = document.createElement("canvas");
       earthCanvas.width = 512;
       earthCanvas.height = 256;
-      const ctx = earthCanvas.getContext('2d')!;
-      
+      const ctx = earthCanvas.getContext("2d")!;
+
       // Base ocean color
-      ctx.fillStyle = '#1a4d8f';
+      ctx.fillStyle = "#1a4d8f";
       ctx.fillRect(0, 0, 512, 256);
-      
+
       // Add continents using green patches
-      ctx.fillStyle = '#2d5a2d';
+      ctx.fillStyle = "#2d5a2d";
       for (let i = 0; i < 150; i++) {
         const x = Math.random() * 512;
         const y = Math.random() * 256;
@@ -638,9 +824,9 @@ export default function Home() {
         ctx.arc(x, y, size, 0, Math.PI * 2);
         ctx.fill();
       }
-      
+
       // Add lighter green patches for variety
-      ctx.fillStyle = '#4a7c4a';
+      ctx.fillStyle = "#4a7c4a";
       for (let i = 0; i < 100; i++) {
         const x = Math.random() * 512;
         const y = Math.random() * 256;
@@ -649,9 +835,9 @@ export default function Home() {
         ctx.arc(x, y, size, 0, Math.PI * 2);
         ctx.fill();
       }
-      
+
       // Add white clouds
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
       for (let i = 0; i < 80; i++) {
         const x = Math.random() * 512;
         const y = Math.random() * 256;
@@ -660,10 +846,10 @@ export default function Home() {
         ctx.arc(x, y, size, 0, Math.PI * 2);
         ctx.fill();
       }
-      
+
       const earthTexture = new THREE.CanvasTexture(earthCanvas);
       earthTexture.needsUpdate = true;
-      
+
       const earthMat = new THREE.MeshStandardMaterial({
         map: earthTexture,
         metalness: 0.2,
@@ -673,79 +859,138 @@ export default function Home() {
       earth.position.set(earthDistance, 0, 0);
       earth.rotation.x = THREE.MathUtils.degToRad(23.5); // Earth's axial tilt
       g.add(earth);
-      
+
       // Earth glow
       const earthGlow = new THREE.PointLight(0x3a7cff, 0.8, 200, 2);
       earthGlow.position.copy(earth.position);
       g.add(earthGlow);
-      
+
       // Earth orbit path
       const earthOrbitGeom = new THREE.BufferGeometry();
       const earthOrbitPoints: any[] = [];
       for (let i = 0; i <= 128; i++) {
         const angle = (i / 128) * Math.PI * 2;
-        earthOrbitPoints.push(new THREE.Vector3(
-          earthDistance * Math.cos(angle),
-          0,
-          earthDistance * Math.sin(angle)
-        ));
+        earthOrbitPoints.push(
+          new THREE.Vector3(
+            earthDistance * Math.cos(angle),
+            0,
+            earthDistance * Math.sin(angle)
+          )
+        );
       }
       earthOrbitGeom.setFromPoints(earthOrbitPoints);
       const earthOrbitMat = new THREE.LineBasicMaterial({
-        color: 0x4488ff,
+        color: 0x5588dd, // Brighter blue to match system view orbits
         transparent: true,
-        opacity: 0.3,
+        opacity: 0.8, // More visible
+        linewidth: 2,
       });
       const earthOrbit = new THREE.LineLoop(earthOrbitGeom, earthOrbitMat);
       g.add(earthOrbit);
 
       // Add exoplanet systems using RA/Dec coordinates
-      const systemsWithCoords = systems.filter(s => s.ra !== undefined && s.dec !== undefined);
-      
+      const systemsWithCoords = systems.filter(
+        (s) => s.ra !== undefined && s.dec !== undefined
+      );
+
       systemsWithCoords.forEach((sys) => {
         if (sys.ra === undefined || sys.dec === undefined) return;
-        
+
+        // Check if this is a custom uploaded system
+        const isCustomSystem = customSystemNames.has(sys.name);
+
         // Use distance if available, otherwise default to 100 parsecs
         const distance = sys.distance_pc || 100;
         const pos = celestialToCartesian(sys.ra, sys.dec, distance, 10);
-        
+
         const sg = new THREE.Group();
         sg.position.set(pos.x, pos.y, pos.z);
         g.add(sg);
 
-        // Star
+        // Star - size based on stellar radius in solar radii (st_rad)
         const starCol = teffColor(sys.star.teff, THREE);
-        const starSize = exSizes ? 4 : Math.max(1.5, ((sys.star as any).radius_rs ?? 1) * 1.5);
-        const starGeom = new THREE.SphereGeometry(starSize, 16, 12);
+        const stellarRadius = sys.star.radius_rs ?? 1; // Default to 1 solar radius if not available
+        const starSize = exSizes
+          ? Math.max(1.5, stellarRadius * 2.5)
+          : Math.max(1, stellarRadius * 1);
+        const starGeom = new THREE.SphereGeometry(starSize, 32, 32);
+        
+        // Create realistic star texture
+        const starTexture = createStarTexture(starCol);
+        
         const starMat = new THREE.MeshStandardMaterial({
+          map: starTexture,
           emissive: starCol,
-          emissiveIntensity: 1.5,
-          color: 0x222233,
-          roughness: 0.4,
-          metalness: 0.1,
+          emissiveIntensity: isCustomSystem ? 1.2 : 0.8,
+          color: starCol,
+          roughness: 1.0,
+          metalness: 0.0,
         });
         const starMesh = new THREE.Mesh(starGeom, starMat);
-        starMesh.userData = { systemName: sys.name, type: 'star' };
+        starMesh.userData = {
+          systemName: sys.name,
+          type: "star",
+          isCustom: isCustomSystem,
+        };
         sg.add(starMesh);
         current.stars.push(starMesh);
-        
+
+        // Add highlighting for custom systems
+        if (isCustomSystem) {
+          // Pulsing outer glow sphere
+          const glowGeom = new THREE.SphereGeometry(starSize * 2, 16, 12);
+          const glowMat = new THREE.MeshBasicMaterial({
+            color: 0x00ff88,
+            transparent: true,
+            opacity: 0.3,
+            side: THREE.BackSide,
+            blending: THREE.AdditiveBlending,
+          });
+          const glowMesh = new THREE.Mesh(glowGeom, glowMat);
+          sg.add(glowMesh);
+          (sg as any).userData.customGlow = glowMesh; // Store for animation
+
+          // Highlight ring around the star
+          const ringGeom = new THREE.RingGeometry(
+            starSize * 2.5,
+            starSize * 3,
+            32
+          );
+          const ringMat = new THREE.MeshBasicMaterial({
+            color: 0x00ffaa,
+            transparent: true,
+            opacity: 0.6,
+            side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending,
+          });
+          const ring = new THREE.Mesh(ringGeom, ringMat);
+          ring.rotation.x = Math.PI / 2;
+          sg.add(ring);
+          (sg as any).userData.customRing = ring; // Store for animation
+
+          // Add a bright point light for custom systems
+          const customLight = new THREE.PointLight(0x00ff88, 2.0, 100, 2);
+          customLight.position.set(0, 0, 0);
+          sg.add(customLight);
+        }
+
         // Don't add individual lights for distant stars to avoid shader uniform limits
         // The global ambient and directional light will illuminate them
 
-        // Add planets with smaller orbits (scaled down for visibility)
+        // Add planets with orbits (scaled for visibility from far away)
         sys.planets.forEach((p0) => {
           const p = { ...p0 } as Planet;
           const a = Math.max(0.004, p.a_au);
           const e = Math.min(0.95, Math.max(0, p.e || 0));
-          // Smaller scale for planets around distant stars
-          const localScale = 15;
+          // Larger scale so orbits are visible from the general view
+          const localScale = 25; // Increased from 15 for better visibility
           const aU = a * localScale;
           const bU = aU * Math.sqrt(1 - e * e);
           const cU = Math.sqrt(Math.max(0, aU * aU - bU * bU));
           const inc = THREE.MathUtils.degToRad(p.incl || 0);
 
-          // Orbit path
-          const N = 48;
+          // Orbit path - more segments for smoother circles
+          const N = 64; // Increased from 48 for smoother appearance
           const pts: any[] = [];
           for (let j = 0; j <= N; j++) {
             const th = (j / N) * 2 * Math.PI;
@@ -755,29 +1000,36 @@ export default function Home() {
           }
           const orbGeom = new THREE.BufferGeometry().setFromPoints(pts);
           const orbMat = new THREE.LineBasicMaterial({
-            color: dimOrbits ? 0x28406f : 0x4066aa,
+            color: isCustomSystem ? 0x00ffaa : 0x5588dd, // Green for custom, blue for others
             transparent: true,
-            opacity: dimOrbits ? 0.2 : 0.4,
+            opacity: isCustomSystem ? 0.9 : 0.7, // More opaque for custom systems
+            linewidth: 1,
           });
           const orbit = new THREE.LineLoop(orbGeom, orbMat);
           orbit.rotation.set(inc, 0, 0);
           sg.add(orbit);
           current.orbits.push(orbit as any);
 
-          // Planet mesh
+          // Planet mesh - larger for visibility
           const rScene = exSizes
-            ? Math.max(0.8, p.radius_rj ? p.radius_rj * 3 : (p.radius_re || 0) * 0.5)
-            : Math.max(0.3, p.radius_rj ? p.radius_rj * 0.8 : (p.radius_re || 0) * 0.15);
-          const geom = new THREE.SphereGeometry(rScene, 12, 8);
+            ? Math.max(
+                1.2,
+                p.radius_rj ? p.radius_rj * 4 : (p.radius_re || 0) * 0.7
+              ) // Increased size
+            : Math.max(
+                0.5,
+                p.radius_rj ? p.radius_rj * 1.2 : (p.radius_re || 0) * 0.25
+              ); // Increased size
+          const geom = new THREE.SphereGeometry(rScene, 16, 12); // More segments for better appearance
           const color = planetTempColor(p.pl_eqt, THREE);
-          
+
           // Create gradient texture for the planet
           const planetTexture = createPlanetTexture(color);
-          
-          const mat = new THREE.MeshStandardMaterial({ 
+
+          const mat = new THREE.MeshStandardMaterial({
             map: planetTexture,
-            metalness: 0.2, 
-            roughness: 0.6 
+            metalness: 0.2,
+            roughness: 0.6,
           });
           const m = new THREE.Mesh(geom, mat);
           (m as any).userData = {
@@ -786,7 +1038,7 @@ export default function Home() {
             bU,
             cU,
             inc,
-            M: Math.random() * Math.PI * 2,
+            M: 0, // Start all planets at periastron (closest approach) for consistency
             name: `${sys.name} ${p.name}`,
             systemRA: sys.ra,
             systemDec: sys.dec,
@@ -796,32 +1048,42 @@ export default function Home() {
           const r0 = (aU * (1 - e * e)) / (1 + e * Math.cos(v0));
           const x0 = r0 * Math.cos(v0);
           const y0 = r0 * Math.sin(v0);
-          m.position.set(x0, 0, y0).applyAxisAngle(new THREE.Vector3(1, 0, 0), inc);
+          m.position
+            .set(x0, 0, y0)
+            .applyAxisAngle(new THREE.Vector3(1, 0, 0), inc);
           sg.add(m);
           current.planets.push(m as any);
         });
       });
 
       setActive("Solar System");
-      setTitleSub(`Sun + Earth + ${systemsWithCoords.length} exoplanet systems`);
-      
-      // Position camera to center Earth in the view
-      controls.target.set(earthDistance, 0, 0); // Target Earth's position
-      camera.position.set(earthDistance, 100, 300); // Position camera to look at Earth
+      setTitleSub(
+        `Sun + Earth + ${systemsWithCoords.length} exoplanet systems`
+      );
+
+      // Position camera for a wider overview showing orbits around distant stars
+      controls.target.set(0, 0, 0); // Target the Sun at center
+      camera.position.set(200, 250, 500); // Pull back for wider view
       controls.maxDistance = 15000;
       controls.update();
     }
 
     function selectPlanet(m: any) {
       const p: any = (m as any).userData;
-      current.orbits.forEach(
-        (o: any) => ((o.material as any).opacity = dimOrbits ? 0.5 : 0.9)
-      );
+      // Keep orbits visible when selecting a planet
+      current.orbits.forEach((o: any) => {
+        (o.material as any).opacity = 0.8;
+        (o.material as any).color.setHex(0x5588dd);
+      });
       const wp = new THREE.Vector3();
       (m as any).getWorldPosition(wp);
       const camTarget = wp.clone();
-      const camPos = wp.clone().add(new THREE.Vector3(0, 40 + p.aU * 0.08, 90 + p.aU * 0.2));
-      
+      // Adjust zoom distance to show the orbit path
+      const zoomDistance = Math.max(100, p.aU * 0.4); // Scale based on orbit size
+      const camPos = wp
+        .clone()
+        .add(new THREE.Vector3(0, 50 + p.aU * 0.12, zoomDistance));
+
       // Animate smooth zoom
       const startPos = camera.position.clone();
       const startTarget = new THREE.Vector3(
@@ -829,75 +1091,86 @@ export default function Home() {
         controls.target.y,
         controls.target.z
       );
-      
+
       let progress = 0;
       const zoomDuration = 0.8; // 0.8 second animation
-      
+
       const animateZoom = () => {
         progress += clock.getDelta() / zoomDuration;
         progress = Math.min(progress, 1);
-        
+
         // Smooth easing function (ease-in-out)
-        const eased = progress < 0.5 
-          ? 2 * progress * progress 
-          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-        
+        const eased =
+          progress < 0.5
+            ? 2 * progress * progress
+            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
         // Interpolate camera position
         camera.position.lerpVectors(startPos, camPos, eased);
-        
+
         // Interpolate target
-        const newTarget = new THREE.Vector3().lerpVectors(startTarget, camTarget, eased);
+        const newTarget = new THREE.Vector3().lerpVectors(
+          startTarget,
+          camTarget,
+          eased
+        );
         controls.target.set(newTarget.x, newTarget.y, newTarget.z);
-        
+
         controls.update();
-        
+
         if (progress < 1) {
           requestAnimationFrame(animateZoom);
         }
       };
-      
+
       animateZoom();
+
+      // Open the details panel first
+      setShowDetails(true);
       
-      const rows: [string, string][] = [
-        ["Planet", p.name],
-        ["Orbital period", p.period_days.toFixed(3) + " days"],
-        ["Semi‑major (a)", p.a_au.toFixed(4) + " AU"],
-        ["Eccentricity", (p.e || 0).toFixed(3)],
-        ["Inclination", (p.incl || 0).toFixed(1) + "°"],
-        [
-          "Radius",
-          p.radius_rj
-            ? p.radius_rj.toFixed(2) + " Rj"
-            : (p.radius_re || 0).toFixed(2) + " R⊕",
-        ],
-      ];
-      if (detailsRef.current) {
-        detailsRef.current.innerHTML =
-          rows
-            .map(
-              ([k, v]) =>
-                `<div class="row"><div>${k}</div><div>${v}</div></div>`
-            )
-            .join("") +
-          `<div style="margin-top:8px"><span class="pill">Evidence</span> <span class="pill">MAST link</span> <span class="pill">Archive row</span></div>`;
-      }
+      // Then populate the planet information with a small delay to ensure the panel is rendered
+      setTimeout(() => {
+        const rows: [string, string][] = [
+          ["Planet", p.name],
+          ["Orbital period", p.period_days.toFixed(3) + " days"],
+          ["Semi‑major (a)", p.a_au.toFixed(4) + " AU"],
+          ["Eccentricity", (p.e || 0).toFixed(3)],
+          ["Inclination", (p.incl || 0).toFixed(1) + "°"],
+          [
+            "Radius",
+            p.radius_rj
+              ? p.radius_rj.toFixed(2) + " Rj"
+              : (p.radius_re || 0).toFixed(2) + " R⊕",
+          ],
+        ];
+        if (detailsRef.current) {
+          detailsRef.current.innerHTML =
+            rows
+              .map(
+                ([k, v]) =>
+                  `<div class="row"><div>${k}</div><div>${v}</div></div>`
+              )
+              .join("") +
+            `<div style="margin-top:8px"><span class="pill">Evidence</span> <span class="pill">MAST link</span> <span class="pill">Archive row</span></div>`;
+        }
+      }, 0);
     }
 
     function selectStar(starMesh: any) {
       const systemName = starMesh.userData.systemName;
-      
+
       // Set the selected star name in state
       setSelectedStar(systemName);
       setActive(systemName); // Update the title bar to show star name
-      
+
       // Get world position of the star
       const wp = new THREE.Vector3();
       starMesh.getWorldPosition(wp);
-      
-      // Calculate zoom position - closer to the star
+
+      // Calculate zoom position - show the star and its orbits
       const camTarget = wp.clone();
-      const camPos = wp.clone().add(new THREE.Vector3(0, 30, 80));
-      
+      const camPos = wp.clone().add(new THREE.Vector3(0, 60, 150)); // Pulled back to show full orbits
+
       // Animate smooth zoom using lerp in animation loop
       const startPos = camera.position.clone();
       const startTarget = new THREE.Vector3(
@@ -905,46 +1178,82 @@ export default function Home() {
         controls.target.y,
         controls.target.z
       );
-      
+
       let progress = 0;
       const zoomDuration = 1.0; // 1 second animation
-      
+
       const animateZoom = () => {
         progress += clock.getDelta() / zoomDuration;
         progress = Math.min(progress, 1);
-        
+
         // Smooth easing function (ease-in-out)
-        const eased = progress < 0.5 
-          ? 2 * progress * progress 
-          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-        
+        const eased =
+          progress < 0.5
+            ? 2 * progress * progress
+            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
         // Interpolate camera position
         camera.position.lerpVectors(startPos, camPos, eased);
-        
+
         // Interpolate target
-        const newTarget = new THREE.Vector3().lerpVectors(startTarget, camTarget, eased);
+        const newTarget = new THREE.Vector3().lerpVectors(
+          startTarget,
+          camTarget,
+          eased
+        );
         controls.target.set(newTarget.x, newTarget.y, newTarget.z);
-        
+
         controls.update();
-        
+
         if (progress < 1) {
           requestAnimationFrame(animateZoom);
         }
       };
-      
+
       animateZoom();
-      
-      // Display star name in details panel
-      if (detailsRef.current) {
-        detailsRef.current.innerHTML = `
-          <div class="row"><div style="font-size: 1.3em; font-weight: bold; text-align: center; margin-bottom: 12px;">${systemName}</div></div>
-          <div style="text-align: center; margin-top: 8px; color: #888;">Click on a planet to see its details</div>
-        `;
-      }
-      
+
+      // Open the details panel first
+      setShowDetails(true);
+
+      // Find the system data to display stellar properties
+      const sys = dataRef.current.find((s) => s.name === systemName);
+
+      // Then populate the star information with a small delay to ensure the panel is rendered
+      setTimeout(() => {
+        if (detailsRef.current) {
+          const rows: [string, string][] = [["Star", systemName]];
+
+          if (sys) {
+            rows.push(["Effective Temperature", `${sys.star.teff} K`]);
+
+            if (sys.star.radius_rs !== undefined) {
+              rows.push([
+                "Stellar Radius",
+                `${sys.star.radius_rs.toFixed(3)} R☉`,
+              ]);
+            }
+
+            if (sys.star.mass_ms !== undefined) {
+              rows.push(["Stellar Mass", `${sys.star.mass_ms.toFixed(3)} M☉`]);
+            }
+
+            rows.push(["Number of Planets", `${sys.planets.length}`]);
+          }
+
+          detailsRef.current.innerHTML =
+            rows
+              .map(
+                ([k, v]) =>
+                  `<div class="row"><div>${k}</div><div>${v}</div></div>`
+              )
+              .join("") +
+            `<div style="margin-top:12px; text-align: center; color: #888;">Click on a planet to see its details</div>`;
+        }
+      }, 0);
+
       // Update title subtitle
       setTitleSub("Star selected");
-      
+
       // Show toast notification
       showToast(`Selected ${systemName}`);
     }
@@ -952,20 +1261,20 @@ export default function Home() {
     function tick() {
       sceneRef.current!.raf = requestAnimationFrame(tick);
       const dt = clock.getDelta();
-      
+
       // Keyboard-based camera movement
       const moveSpeed = keys.shift ? 100 : 50; // Hold Shift for faster movement
       const moveAmount = moveSpeed * dt;
-      
+
       // Get camera direction vectors
       const forward = new THREE.Vector3();
       camera.getWorldDirection(forward);
       forward.y = 0; // Keep movement on horizontal plane for W/S
       forward.normalize();
-      
+
       const right = new THREE.Vector3();
       right.crossVectors(forward, camera.up).normalize();
-      
+
       // WASD or Arrow keys for movement
       if (keys.w || keys.arrowup) {
         camera.position.addScaledVector(forward, moveAmount);
@@ -1003,64 +1312,102 @@ export default function Home() {
           controls.target.z + newTarget.z
         );
       }
-      
+
       // Q/E for vertical movement
       if (keys.q) {
         camera.position.y -= moveAmount;
-        controls.target.set(controls.target.x, controls.target.y - moveAmount, controls.target.z);
+        controls.target.set(
+          controls.target.x,
+          controls.target.y - moveAmount,
+          controls.target.z
+        );
       }
       if (keys.e) {
         camera.position.y += moveAmount;
-        controls.target.set(controls.target.x, controls.target.y + moveAmount, controls.target.z);
+        controls.target.set(
+          controls.target.x,
+          controls.target.y + moveAmount,
+          controls.target.z
+        );
       }
-      
+
       controls.update();
       const timeFactor = speedRef.current; // Allow 0 to stop planets
-      
+
       // Animate sun fire effects
       if ((current as any).sunFlares) {
         const flares = (current as any).sunFlares;
         flares.rotation.y += dt * 0.05;
         flares.rotation.x += dt * 0.02;
-        
+
         // Pulsate flare opacity for flickering effect
         const pulsate = Math.sin(clock.getElapsedTime() * 2) * 0.2 + 0.8;
         flares.material.opacity = pulsate;
       }
-      
+
       // Animate fire layers for dynamic flame effect
       if ((current as any).fireLayers) {
         const layers = (current as any).fireLayers;
         const time = clock.getElapsedTime();
-        
+
         layers.forEach((layer: any, i: number) => {
           // Different rotation speeds for each layer
           layer.rotation.y += dt * (0.1 + i * 0.05);
           layer.rotation.x += dt * (0.05 - i * 0.01);
-          
+
           // Pulsating scale for breathing effect
           const scale = 1 + Math.sin(time * (1 + i * 0.5)) * 0.05;
           layer.scale.set(scale, scale, scale);
-          
+
           // Opacity flickering
           const baseOpacity = [0.4, 0.3, 0.15][i];
           const flicker = Math.sin(time * (3 + i)) * 0.1;
           layer.material.opacity = baseOpacity + flicker;
         });
       }
-      
+
       // Animate sun surface with emissive intensity pulsing
       if (current.star && mode === "earth") {
         const intensity = 2.5 + Math.sin(clock.getElapsedTime() * 1.5) * 0.3;
         (current.star.material as any).emissiveIntensity = intensity;
       }
-      
+
+      // Animate custom system highlights
+      if (current.group) {
+        const time = clock.getElapsedTime();
+        current.group.children.forEach((child: any) => {
+          if (child.userData.customGlow) {
+            // Pulsing glow effect
+            const glowPulse = Math.sin(time * 2) * 0.15 + 0.3;
+            child.userData.customGlow.material.opacity = glowPulse;
+
+            // Scale pulsing
+            const scalePulse = 1 + Math.sin(time * 2) * 0.1;
+            child.userData.customGlow.scale.set(
+              scalePulse,
+              scalePulse,
+              scalePulse
+            );
+          }
+
+          if (child.userData.customRing) {
+            // Rotate the highlight ring
+            child.userData.customRing.rotation.z += dt * 0.5;
+
+            // Pulsing opacity
+            const ringPulse = Math.sin(time * 3) * 0.2 + 0.6;
+            child.userData.customRing.material.opacity = ringPulse;
+          }
+        });
+      }
+
       for (const m of current.planets) {
         const p: any = (m as any).userData;
         const e = Math.min(0.95, Math.max(0, p.e || 0));
         // Slowdown factor for reasonable orbital motion
         const orbitalSlowdown = 20; // Adjust for slower, more realistic motion
-        p.M += (timeFactor * dt * (2 * Math.PI)) / (p.period_days * orbitalSlowdown); // mean anomaly advance
+        p.M +=
+          (timeFactor * dt * (2 * Math.PI)) / (p.period_days * orbitalSlowdown); // mean anomaly advance
         const v = trueAnomaly(p.M, e);
         const a = (p.aU = scaleAU(p.a_au, logScale));
         const b = (p.bU = a * Math.sqrt(1 - e * e));
@@ -1089,14 +1436,14 @@ export default function Home() {
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       ray.setFromCamera(mouse, camera);
-      
+
       // Check for star clicks first
       const starHits = ray.intersectObjects(current.stars, false);
       if (starHits.length) {
         selectStar(starHits[0].object as any);
         return;
       }
-      
+
       // Check for planet clicks
       const hits = ray.intersectObjects(current.planets, false);
       if (hits.length) selectPlanet(hits[0].object as any);
@@ -1123,8 +1470,8 @@ export default function Home() {
     return () => {
       cancelAnimationFrame(sceneRef.current?.raf || 0);
       window.removeEventListener("resize", onResize);
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
       renderer.dispose();
       // Remove global light and its target to avoid leaks
       scene.remove(globalLight);
@@ -1175,12 +1522,15 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exSizes, logScale, showHZ, mode, dimOrbits]);
 
-  // Dim orbit material opacity live toggle
+  // Dim orbit material opacity live toggle - now orbits are always visible
   useEffect(() => {
     const s = sceneRef.current;
     if (!s) return;
+    // Orbits are now always visible with consistent styling
     s.current.orbits.forEach((o: any) => {
-      (o.material as any).opacity = dimOrbits ? 0.35 : 0.7;
+      // Keep the enhanced visibility
+      (o.material as any).opacity = 0.8;
+      (o.material as any).color.setHex(0x5588dd);
     });
   }, [dimOrbits]);
 
@@ -1191,40 +1541,18 @@ export default function Home() {
     // switch to system mode on manual selection
     if (mode !== "system") setMode("system");
     setActive(sys.name);
+    setViewingFromSidebar(true); // Mark that we're viewing from sidebar
     s.buildSystem(sys);
     showToast(`Loaded ${sys.name}`);
-  }
-
-  function handleTour(toggle?: boolean) {
-    if (!data.length) {
-      showToast("No systems loaded");
-      return;
-    }
-    if (!tourRef.current)
-      tourRef.current = { timer: null as any, idx: 0 } as any;
-    const tr = tourRef.current!;
-    if (tr && tr.timer) {
-      clearInterval(tr.timer as any);
-      tr.timer = null as any;
-      showToast("Tour stopped");
-      return;
-    }
-    tr.idx = 0;
-    tr.timer = setInterval(() => {
-      const s = data[tr.idx % data.length];
-      if (s) handleBuild(s);
-      tr.idx++;
-    }, 4000);
-    showToast("Tour started");
   }
 
   function resetCam() {
     const s = sceneRef.current;
     if (!s) return;
-    
+
     // Clear selected star when resetting camera
     setSelectedStar(null);
-    
+
     if (mode === "explore") {
       s.camera.position.set(0, 600, 1200);
       s.controls.target.set(0, 0, 0);
@@ -1243,6 +1571,52 @@ export default function Home() {
     }
   }
 
+  function backToMainView() {
+    const s = sceneRef.current;
+    if (!s) return;
+
+    // Clear selected star and sidebar viewing state
+    setSelectedStar(null);
+    setViewingFromSidebar(false);
+    setActive(null);
+
+    // Switch back to earth mode (main view)
+    setMode("earth");
+
+    // Reset camera to earth-centered view
+    const earthDistance = 150;
+    s.camera.position.set(earthDistance, 100, 300);
+    s.controls.target.set(earthDistance, 0, 0);
+    s.controls.maxDistance = 15000;
+    s.controls.update();
+
+    // Rebuild the earth-centered view
+    s.buildEarthCentered(data);
+  }
+
+  function handleUploadSystem(system: SystemT) {
+    // Add the new system to the data array
+    const updatedData = [...data, system];
+    setData(updatedData);
+
+    // Track this as a custom system for highlighting
+    setCustomSystemNames((prev) => new Set(prev).add(system.name));
+
+    showToast(
+      `✨ ${system.name} added! Look for the glowing green highlight in the map!`,
+      3000
+    );
+
+    // If we're in earth mode, rebuild the scene to show the new system
+    const s = sceneRef.current;
+    if (s && mode === "earth") {
+      // Use setTimeout to ensure state has updated
+      setTimeout(() => {
+        s.buildEarthCentered(updatedData);
+      }, 50);
+    }
+  }
+
   const speedVal = useMemo(() => speed.toFixed(2) + "×", [speed]);
   const modeLabel = mode === "earth" ? "Solar System" : "System";
 
@@ -1256,9 +1630,17 @@ export default function Home() {
   function toggleFullscreen() {
     const el: any = document.documentElement as any;
     if (!document.fullscreenElement) {
-      (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen)?.call(el);
+      (
+        el.requestFullscreen ||
+        el.webkitRequestFullscreen ||
+        el.msRequestFullscreen
+      )?.call(el);
     } else {
-      (document.exitFullscreen || (document as any).webkitExitFullscreen || (document as any).msExitFullscreen)?.call(document);
+      (
+        document.exitFullscreen ||
+        (document as any).webkitExitFullscreen ||
+        (document as any).msExitFullscreen
+      )?.call(document);
     }
   }
 
@@ -1267,28 +1649,32 @@ export default function Home() {
       <aside id="left">
         <div className="leftSticky">
           <h1>Systems</h1>
-          <SearchBar q={q} onChange={setQ} onTour={() => handleTour(true)} />
-          <FiltersPanel
-            logScale={logScale}
-            showHZ={showHZ}
-            onChange={(
-              patch: Partial<{
-                logScale: boolean;
-                showHZ: boolean;
-              }>
-            ) => {
-              if (patch.logScale !== undefined) setLogScale(patch.logScale);
-              if (patch.showHZ !== undefined) setShowHZ(patch.showHZ);
-            }}
-          />
+          <SearchBar q={q} onChange={setQ} />
         </div>
-        {loading ? (
-          <div className="list"><div className="sys">Loading…</div></div>
-        ) : filtered.length ? (
-          <SystemsList systems={filtered} onSelect={handleBuild} />
-        ) : (
-          <div className="list"><div className="sys">No systems</div></div>
-        )}
+        <div className="list-container">
+          {loading ? (
+            <div className="list">
+              <div className="sys">Loading…</div>
+            </div>
+          ) : filtered.length ? (
+            <SystemsList
+              systems={filtered}
+              onSelect={handleBuild}
+              customSystemNames={customSystemNames}
+            />
+          ) : (
+            <div className="list">
+              <div className="sys">No systems</div>
+            </div>
+          )}
+        </div>
+        <button
+          className="add-system-btn text-md"
+          onClick={() => setShowUploadModal(true)}
+          title="Add custom system"
+        >
+          CHECK YOUR EXOPLANET CANDIDATE
+        </button>
       </aside>
 
       <main id="center" ref={centerRef}>
@@ -1299,6 +1685,8 @@ export default function Home() {
           onReset={resetCam}
           modeLabel={modeLabel}
           selectedStar={selectedStar}
+          onBackToMain={backToMainView}
+          showBackButton={viewingFromSidebar}
         />
         <TitleBar system={active} sub={titleSub} />
         <button
@@ -1321,7 +1709,9 @@ export default function Home() {
           }
           line2={
             mode === "earth" ? (
-              <>Heliocentric view • Exoplanet systems at celestial coordinates</>
+              <>
+                Heliocentric view • Exoplanet systems at celestial coordinates
+              </>
             ) : (
               <>Speed via Kepler's 2nd law</>
             )
@@ -1334,14 +1724,32 @@ export default function Home() {
           onClick={toggleFullscreen}
         >
           {isFS ? (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polyline points="9 3 9 9 3 9" />
               <polyline points="15 21 15 15 21 15" />
               <line x1="21" y1="3" x2="14" y2="10" />
               <line x1="3" y1="21" x2="10" y2="14" />
             </svg>
           ) : (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polyline points="3 9 3 3 9 3" />
               <polyline points="21 15 21 21 15 21" />
               <line x1="21" y1="3" x2="14" y2="10" />
@@ -1357,6 +1765,12 @@ export default function Home() {
           <DetailsPanel detailsRef={detailsRef} />
         </aside>
       )}
+
+      <UploadModal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onUpload={handleUploadSystem}
+      />
     </div>
   );
 }

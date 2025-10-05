@@ -27,7 +27,6 @@ Or use any static server. Import maps require modern browsers.
 ## Notes
 
 - Sizes can be exaggerated (toggle). Orbits can be shown on a log scale for compact systems.
-- Click **Tour** to auto-cycle through systems.
 - Click a planet to populate details in the right panel.
 - HUD badge shows unit test results for the orbital solver.
 

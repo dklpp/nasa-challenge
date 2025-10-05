@@ -1,13 +1,11 @@
 "use client";
 
-export function SearchBar({
+export default function SearchBar({
   q,
   onChange,
-  onTour,
 }: {
   q: string;
   onChange: (v: string) => void;
-  onTour: () => void;
 }) {
   return (
     <div className="search">
@@ -17,11 +15,6 @@ export function SearchBar({
         value={q}
         onChange={(e) => onChange(e.target.value)}
       />
-      <button id="tourBtn" title="Auto tour" onClick={onTour}>
-        Tour
-      </button>
     </div>
   );
 }
-
-export default SearchBar;

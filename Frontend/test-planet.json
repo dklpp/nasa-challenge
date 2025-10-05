@@ -1,0 +1,31 @@
+{
+  "name": "PEDIK",
+  "star": {
+    "teff": 2566,
+    "radius_rs": 0.121,
+    "mass_ms": 0.089
+  },
+  "planets": [
+    {
+      "name": "b",
+      "a_au": 0.01154,
+      "period_days": 1.51087,
+      "e": 0.006,
+      "radius_re": 1.116,
+      "incl": 89.56,
+      "pl_eqt": 400
+    },
+    {
+      "name": "c",
+      "a_au": 0.01580,
+      "period_days": 2.42182,
+      "e": 0.007,
+      "radius_re": 1.097,
+      "incl": 89.67,
+      "pl_eqt": 342
+    }
+  ],
+  "ra": 346.6223,
+  "dec": -5.0413,
+  "distance_pc": 12.43
+}
