@@ -439,6 +439,22 @@ function computeOrbitScales(
   }
   return scales;
 }
+
+    // --- Deterministic random tilt per system (so it stays stable across reloads)
+    function randFromString(s: string) {
+      let h = 2166136261 >>> 0; // FNV-ish
+      for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      // mix
+      h += h << 13; h ^= h >>> 7; h += h << 3; h ^= h >>> 17; h += h << 5;
+      return (h >>> 0) / 4294967295;
+    }
+    function randAngleDeg(name: string, salt: string, rangeDeg: number) {
+      const r = randFromString(name + '|' + salt);
+      return THREE.MathUtils.degToRad((r - 0.5) * 2 * rangeDeg);
+    }
     function makeStars(
       N: number,
       R: number,
@@ -602,6 +618,12 @@ function smoothCamTo(camPos: THREE.Vector3, targetPos: THREE.Vector3, duration =
       const g = new THREE.Group();
       scene.add(g);
       current.group = g;
+            // Tilt the whole system to give each star a distinct orbital plane
+      g.rotation.set(
+        randAngleDeg(sys.name, 'sys-x', 18),
+        randAngleDeg(sys.name, 'sys-y', 18),
+        randAngleDeg(sys.name, 'sys-z', 18)
+      );
       // Reset camera to a good vantage point on each system build
       // controls.target.set(0, 0, 0);
       // camera.position.set(0, 120, 260);
@@ -999,6 +1021,12 @@ smoothCamTo(
 
         const sg = new THREE.Group();
         sg.position.set(pos.x, pos.y, pos.z);
+                // Give this star system a unique orbital plane orientation
+        sg.rotation.set(
+          randAngleDeg(sys.name, 'ec-x', 22),
+          randAngleDeg(sys.name, 'ec-y', 22),
+          randAngleDeg(sys.name, 'ec-z', 22)
+        );
         g.add(sg);
 
         // Star - size based on stellar radius in solar radii (st_rad) from K2 dataset
