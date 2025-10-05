@@ -21,13 +21,13 @@ from torch.utils.data import Dataset, DataLoader
 # ------------------------------------------------------------
 from models import FCNModel  # your models.py file (BatchNorm can be replaced below)
 
-DATA_PATH = "data/processed_tess/tess_data_2000_filtered.csv"
+DATA_PATH = "data/processed_tess/tess_data_20000_filtered.csv"
 OUTPUT_DIR = "outputs_CNN_model"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-BATCH_SIZE = 64
-EPOCHS = 25
-LR = 1e-4             # reduced LR for stability
+BATCH_SIZE = 16
+EPOCHS = 5
+LR = 1e-2             # reduced LR for stability
 SIGMA = 7.0
 SEED = 42
 
@@ -70,6 +70,10 @@ print("Unique test  labels:", np.unique(y_test,  return_counts=True))
 # 4. Normalize + smooth + FFT (with log scaling + standardization)
 # ------------------------------------------------------------
 # Row-wise L2 normalization
+# Handle NaNs (replace missing values)
+X_train = np.nan_to_num(X_train, nan=0.0)
+X_test  = np.nan_to_num(X_test, nan=0.0)
+
 X_train = normalize(X_train)
 X_test = normalize(X_test)
 
@@ -149,6 +153,8 @@ def evaluate(loader):
     y_true = np.array(y_true)
     y_prob = np.array(y_prob)
     y_pred = (y_prob >= 0.5).astype(int)
+    #y_pred_flipped = 1 - y_pred
+
     return accuracy_score(y_true, y_pred)
 
 
@@ -211,6 +217,8 @@ with torch.no_grad():
 y_true = np.array(y_true)
 y_prob = np.array(y_prob)
 y_pred = (y_prob >= 0.5).astype(int)
+
+#y_pred_flipped = 1 - y_pred
 
 print("\n✅ Test Accuracy:", accuracy_score(y_true, y_pred))
 print(classification_report(y_true, y_pred, target_names=["class 0 (FP/FA)", "class 1 (CP/KP)"]))
