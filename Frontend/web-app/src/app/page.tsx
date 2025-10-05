@@ -1386,7 +1386,7 @@ const aU = aU0 * mult;
       );
 
       let progress = 0;
-      const zoomDuration = 1.0; // 1 second animation
+      const zoomDuration = 0.1; // 1 second animation
       let animationId: number | null = null;
 
       const animateZoom = () => {
@@ -1885,6 +1885,11 @@ const c = (p.cU = Math.sqrt(Math.max(0, a * a - b * b)));
     setActive(sys.name);
     setViewingFromSidebar(true); // Mark that we're viewing from sidebar
     s.buildSystem(sys);
+    
+    // Center the camera on the star after building the system
+    // Position camera at a good distance to view the entire system
+    s.smoothCamTo(new THREE.Vector3(0, 120, 260), new THREE.Vector3(0, 0, 0), 1.2);
+    
     showToast(`Loaded ${sys.name}`);
   }
 
