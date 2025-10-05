@@ -13,7 +13,7 @@ export type System = {
   name: string; // host star / system name
   star: {
     teff: number; // stellar effective temperature (K)
-    radius_rs?: number; // stellar radius (R_sun)
+    radius_rs?: number; // stellar radius in solar radii (R☉) from st_rad in K2 dataset
     mass_ms?: number; // stellar mass (M_sun)
   };
   planets: Planet[];

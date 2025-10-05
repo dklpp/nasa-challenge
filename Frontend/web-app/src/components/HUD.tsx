@@ -1,6 +1,16 @@
 "use client";
 
-type Props = {
+export function HUD({
+  speed,
+  onSpeed,
+  speedVal,
+  onReset,
+  modeLabel,
+  onToggleDetails,
+  detailsVisible,
+  onBackToMain,
+  showBackButton,
+}: {
   speed: number;
   onSpeed: (v: number) => void;
   speedVal: string;
@@ -8,12 +18,9 @@ type Props = {
   modeLabel: string;
   onToggleDetails?: () => void;
   detailsVisible?: boolean;
-  selectedStar?: string | null;
   onBackToMain?: () => void;
   showBackButton?: boolean;
-};
-
-export function HUD({ speed, onSpeed, speedVal, onReset, modeLabel, onToggleDetails, detailsVisible, selectedStar, onBackToMain, showBackButton }: Props) {
+}) {
   return (
     <div id="hud">
       <label>Speed</label>
@@ -26,15 +33,23 @@ export function HUD({ speed, onSpeed, speedVal, onReset, modeLabel, onToggleDeta
         value={speed}
         onChange={(e) => onSpeed(parseFloat(e.target.value))}
       />
-      <span id="speedVal" className="badge">{speedVal}</span>
-      <span id="modeBadge" className="badge whitespace-nowrap">{modeLabel}</span>
+      <span id="speedVal" className="badge">
+        {speedVal}
+      </span>
+      <span id="modeBadge" className="badge whitespace-nowrap">
+        {modeLabel}
+      </span>
       {onToggleDetails && (
         <button id="toggleDetails" onClick={onToggleDetails}>
           {detailsVisible ? "Hide details" : "Show details"}
         </button>
       )}
       {showBackButton && onBackToMain && (
-        <button id="backToMain" className="whitespace-nowrap" onClick={onBackToMain}>
+        <button
+          id="backToMain"
+          className="whitespace-nowrap"
+          onClick={onBackToMain}
+        >
           ← Back to main view
         </button>
       )}

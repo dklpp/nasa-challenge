@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -33,16 +34,13 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const exSizes = true;
   const [logScale, setLogScale] = useState(true);
-  const [showHZ, setShowHZ] = useState(false);
   const dimOrbits = false;
   const [speed, setSpeed] = useState(1);
   const [toast, setToast] = useState("");
   const [active, setActive] = useState<string | null>(null);
   const [titleSub, setTitleSub] = useState("Click a system → click a planet");
-  const [sizeScale, setSizeScale] = useState(0.12);
   const [mode, setMode] = useState<"explore" | "system" | "earth">("earth");
   const [showDetails, setShowDetails] = useState(false);
-  const [selectedStar, setSelectedStar] = useState<string | null>(null);
   const [viewingFromSidebar, setViewingFromSidebar] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [customSystemNames, setCustomSystemNames] = useState<Set<string>>(
@@ -128,6 +126,23 @@ export default function Home() {
     controls.minDistance = 30;
     controls.maxDistance = 1500;
 
+    // Track previous control state to detect user interaction
+    let previousControlTarget = { x: controls.target.x, y: controls.target.y, z: controls.target.z };
+    let userInteractionDetector = setInterval(() => {
+      // If controls target changed significantly and it wasn't from our animation, cancel animation
+      const dx = Math.abs(controls.target.x - previousControlTarget.x);
+      const dy = Math.abs(controls.target.y - previousControlTarget.y);
+      const dz = Math.abs(controls.target.z - previousControlTarget.z);
+      
+      if (dx > 0.5 || dy > 0.5 || dz > 0.5) {
+        if ((current as any).zoomAnimation) {
+          cancelAnimationFrame((current as any).zoomAnimation);
+          (current as any).zoomAnimation = null;
+        }
+        previousControlTarget = { x: controls.target.x, y: controls.target.y, z: controls.target.z };
+      }
+    }, 100);
+
     // Keyboard controls for camera movement
     const keys = {
       w: false,
@@ -150,6 +165,20 @@ export default function Home() {
       }
       if (e.key === "Shift") {
         keys.shift = true;
+      }
+      // Press Escape to unlock camera and reset target to center
+      if (e.key === "Escape") {
+        // Cancel any ongoing zoom animation
+        if ((current as any).zoomAnimation) {
+          cancelAnimationFrame((current as any).zoomAnimation);
+          (current as any).zoomAnimation = null;
+        }
+        // Reset controls target to center
+        controls.target.set(0, 0, 0);
+        controls.update();
+        // Close details panel if open
+        setShowDetails(false);
+        showToast("Camera unlocked - free to move", 1200);
       }
     };
 
@@ -305,13 +334,21 @@ export default function Home() {
       const h = { h: 0, s: 0, l: 0 };
       baseColor.getHSL(h);
 
-      // Base color with subtle radial gradient
+      // Create strong radial gradient from bright center to darker edges
+      // Multiple gradients to simulate limb darkening effect
       const centerGrad = ctx.createRadialGradient(512, 256, 0, 512, 256, 512);
-      const brightColor = new THREE.Color().setHSL(h.h, Math.max(0.4, h.s * 0.8), Math.min(0.85, h.l * 1.2));
-      const dimColor = new THREE.Color().setHSL(h.h, Math.max(0.5, h.s * 0.9), Math.max(0.6, h.l * 0.9));
       
-      centerGrad.addColorStop(0, `rgb(${Math.floor(brightColor.r * 255)}, ${Math.floor(brightColor.g * 255)}, ${Math.floor(brightColor.b * 255)})`);
-      centerGrad.addColorStop(1, `rgb(${Math.floor(dimColor.r * 255)}, ${Math.floor(dimColor.g * 255)}, ${Math.floor(dimColor.b * 255)})`);
+      // Very bright yellow/white center
+      const centerColor = new THREE.Color().setHSL(h.h, Math.max(0.3, h.s * 0.6), Math.min(0.95, h.l * 1.5));
+      // Bright mid-tone
+      const midColor = new THREE.Color().setHSL(h.h, Math.max(0.5, h.s * 0.85), Math.min(0.8, h.l * 1.2));
+      // Darker orange/red edges (limb darkening)
+      const edgeColor = new THREE.Color().setHSL(h.h + 0.02, Math.max(0.6, h.s * 1.0), Math.max(0.4, h.l * 0.7));
+      
+      centerGrad.addColorStop(0, `rgb(${Math.floor(centerColor.r * 255)}, ${Math.floor(centerColor.g * 255)}, ${Math.floor(centerColor.b * 255)})`);
+      centerGrad.addColorStop(0.3, `rgb(${Math.floor(centerColor.r * 255)}, ${Math.floor(centerColor.g * 255)}, ${Math.floor(centerColor.b * 255)})`);
+      centerGrad.addColorStop(0.7, `rgb(${Math.floor(midColor.r * 255)}, ${Math.floor(midColor.g * 255)}, ${Math.floor(midColor.b * 255)})`);
+      centerGrad.addColorStop(1, `rgb(${Math.floor(edgeColor.r * 255)}, ${Math.floor(edgeColor.g * 255)}, ${Math.floor(edgeColor.b * 255)})`);
       ctx.fillStyle = centerGrad;
       ctx.fillRect(0, 0, 1024, 512);
 
@@ -395,7 +432,6 @@ export default function Home() {
         pos[3 * i] = x;
         pos[3 * i + 1] = y;
         pos[3 * i + 2] = z;
-        // Mostly blue-white with some warmer stars
         const isWarm = Math.random() < (opts.warmChance ?? 0.18);
         const h = isWarm
           ? 0.06 + Math.random() * 0.04
@@ -519,11 +555,13 @@ export default function Home() {
       controls.update();
 
       const starCol = teffColor(sys.star.teff, THREE);
-      // Scale star size based on stellar radius in solar radii (st_rad)
+      // Scale star size based on stellar radius in solar radii (st_rad) from K2 dataset
+      // K2 st_rad ranges from ~0.12 R☉ (small red dwarfs) to ~85 R☉ (giants)
       const stellarRadius = sys.star.radius_rs ?? 1; // Default to 1 solar radius if not available
+
       const starSize = exSizes
-        ? Math.max(3, stellarRadius * 6)
-        : Math.max(1.5, stellarRadius * 1.8);
+        ? Math.max(4, Math.min(stellarRadius * 8, 50 + Math.log(stellarRadius) * 10))
+        : Math.max(2, Math.min(stellarRadius * 2.5, 15 + Math.log(stellarRadius) * 4));
       const starGeom = new THREE.SphereGeometry(starSize, 64, 64);
       
       // Create realistic star texture
@@ -570,24 +608,6 @@ export default function Home() {
       lamp.position.set(0, 0, 0);
       g.add(lamp);
 
-      if (showHZ) {
-        const hz = new THREE.RingGeometry(
-          scaleAU(0.75, logScale),
-          scaleAU(1.77, logScale),
-          128
-        );
-        const hzmat = new THREE.MeshBasicMaterial({
-          color: 0x66ffcc,
-          transparent: true,
-          opacity: 0.08,
-          side: THREE.DoubleSide,
-        });
-        const hzmesh = new THREE.Mesh(hz, hzmat);
-        hzmesh.rotation.x = -Math.PI / 2;
-        g.add(hzmesh);
-        current.hz = hzmesh as any;
-      }
-
       let maxAU = 0;
       sys.planets.forEach((p0) => {
         const p = { ...p0 } as Planet;
@@ -609,10 +629,10 @@ export default function Home() {
         }
         const orbGeom = new THREE.BufferGeometry().setFromPoints(pts);
         const orbMat = new THREE.LineBasicMaterial({
-          color: 0x5588dd, // Brighter blue color for better visibility
+          color: 0x5588dd, 
           transparent: true,
-          opacity: 0.8, // Always visible with good opacity
-          linewidth: 2, // Thicker line (Note: linewidth > 1 may not work on all platforms)
+          opacity: 0.85, 
+          linewidth: 2, 
         });
         const orbit = new THREE.LineLoop(orbGeom, orbMat);
         // Keep orbit geometry in XZ plane and tilt around X by inclination to match planet motion
@@ -882,7 +902,7 @@ export default function Home() {
       const earthOrbitMat = new THREE.LineBasicMaterial({
         color: 0x5588dd, // Brighter blue to match system view orbits
         transparent: true,
-        opacity: 0.8, // More visible
+        opacity: 0.85, // Consistent visibility
         linewidth: 2,
       });
       const earthOrbit = new THREE.LineLoop(earthOrbitGeom, earthOrbitMat);
@@ -907,12 +927,16 @@ export default function Home() {
         sg.position.set(pos.x, pos.y, pos.z);
         g.add(sg);
 
-        // Star - size based on stellar radius in solar radii (st_rad)
+        // Star - size based on stellar radius in solar radii (st_rad) from K2 dataset
+        // K2 st_rad ranges from ~0.12 R☉ (small red dwarfs) to ~85 R☉ (giants)
         const starCol = teffColor(sys.star.teff, THREE);
         const stellarRadius = sys.star.radius_rs ?? 1; // Default to 1 solar radius if not available
+        
+        // Use logarithmic scaling for very large stars in explore mode
+        // Smaller multiplier for distant view to prevent overwhelming the scene
         const starSize = exSizes
-          ? Math.max(1.5, stellarRadius * 2.5)
-          : Math.max(1, stellarRadius * 1);
+          ? Math.max(2, Math.min(stellarRadius * 3.5, 20 + Math.log(stellarRadius) * 7))
+          : Math.max(1.5, Math.min(stellarRadius * 1.5, 10 + Math.log(stellarRadius) * 3));
         const starGeom = new THREE.SphereGeometry(starSize, 32, 32);
         
         // Create realistic star texture
@@ -966,7 +990,7 @@ export default function Home() {
           const ring = new THREE.Mesh(ringGeom, ringMat);
           ring.rotation.x = Math.PI / 2;
           sg.add(ring);
-          (sg as any).userData.customRing = ring; // Store for animation
+          (sg as any).userData.customRing = ring; 
 
           // Add a bright point light for custom systems
           const customLight = new THREE.PointLight(0x00ff88, 2.0, 100, 2);
@@ -974,23 +998,20 @@ export default function Home() {
           sg.add(customLight);
         }
 
-        // Don't add individual lights for distant stars to avoid shader uniform limits
-        // The global ambient and directional light will illuminate them
-
         // Add planets with orbits (scaled for visibility from far away)
         sys.planets.forEach((p0) => {
           const p = { ...p0 } as Planet;
           const a = Math.max(0.004, p.a_au);
           const e = Math.min(0.95, Math.max(0, p.e || 0));
-          // Larger scale so orbits are visible from the general view
-          const localScale = 25; // Increased from 15 for better visibility
+          // Much larger scale so orbits are clearly visible from the general view
+          const localScale = 50; 
           const aU = a * localScale;
           const bU = aU * Math.sqrt(1 - e * e);
           const cU = Math.sqrt(Math.max(0, aU * aU - bU * bU));
           const inc = THREE.MathUtils.degToRad(p.incl || 0);
 
           // Orbit path - more segments for smoother circles
-          const N = 64; // Increased from 48 for smoother appearance
+          const N = 64;
           const pts: any[] = [];
           for (let j = 0; j <= N; j++) {
             const th = (j / N) * 2 * Math.PI;
@@ -1000,27 +1021,28 @@ export default function Home() {
           }
           const orbGeom = new THREE.BufferGeometry().setFromPoints(pts);
           const orbMat = new THREE.LineBasicMaterial({
-            color: isCustomSystem ? 0x00ffaa : 0x5588dd, // Green for custom, blue for others
+            color: isCustomSystem ? 0x00ffaa : 0x88bbff, // Brighter colors for visibility
             transparent: true,
-            opacity: isCustomSystem ? 0.9 : 0.7, // More opaque for custom systems
-            linewidth: 1,
+            opacity: 1.0, // Full opacity for maximum visibility
+            linewidth: 3, // Even thicker lines
+            blending: THREE.AdditiveBlending, // Additive blending makes orbits glow
           });
           const orbit = new THREE.LineLoop(orbGeom, orbMat);
           orbit.rotation.set(inc, 0, 0);
           sg.add(orbit);
           current.orbits.push(orbit as any);
 
-          // Planet mesh - larger for visibility
+          // Planet mesh - larger for visibility with bigger orbits
           const rScene = exSizes
             ? Math.max(
-                1.2,
-                p.radius_rj ? p.radius_rj * 4 : (p.radius_re || 0) * 0.7
-              ) // Increased size
+                2.5,
+                p.radius_rj ? p.radius_rj * 8 : (p.radius_re || 0) * 1.5
+              ) // Increased size to match larger orbits
             : Math.max(
-                0.5,
-                p.radius_rj ? p.radius_rj * 1.2 : (p.radius_re || 0) * 0.25
+                1.0,
+                p.radius_rj ? p.radius_rj * 2.5 : (p.radius_re || 0) * 0.5
               ); // Increased size
-          const geom = new THREE.SphereGeometry(rScene, 16, 12); // More segments for better appearance
+          const geom = new THREE.SphereGeometry(rScene, 16, 12);
           const color = planetTempColor(p.pl_eqt, THREE);
 
           // Create gradient texture for the planet
@@ -1072,17 +1094,32 @@ export default function Home() {
       const p: any = (m as any).userData;
       // Keep orbits visible when selecting a planet
       current.orbits.forEach((o: any) => {
-        (o.material as any).opacity = 0.8;
+        (o.material as any).opacity = 0.85;
         (o.material as any).color.setHex(0x5588dd);
       });
       const wp = new THREE.Vector3();
       (m as any).getWorldPosition(wp);
-      const camTarget = wp.clone();
+      const camTarget = wp.clone(); // Target the planet (center of screen)
+      
       // Adjust zoom distance to show the orbit path
       const zoomDistance = Math.max(100, p.aU * 0.4); // Scale based on orbit size
-      const camPos = wp
-        .clone()
-        .add(new THREE.Vector3(0, 50 + p.aU * 0.12, zoomDistance));
+      const heightOffset = 50 + p.aU * 0.12; // Elevation for orbit view
+      
+      // Direction from planet to current camera position
+      const directionToCamera = new THREE.Vector3()
+        .subVectors(camera.position, wp)
+        .normalize();
+      
+      // If we're very close or the direction is invalid, use a default angle
+      if (directionToCamera.length() < 0.1) {
+        directionToCamera.set(0, 0.3, 1).normalize();
+      }
+      
+      // Position camera to center the planet in view
+      const camPos = wp.clone().add(
+        directionToCamera.multiplyScalar(zoomDistance)
+      );
+      camPos.y += heightOffset; // Add height for better view
 
       // Animate smooth zoom
       const startPos = camera.position.clone();
@@ -1094,6 +1131,7 @@ export default function Home() {
 
       let progress = 0;
       const zoomDuration = 0.8; // 0.8 second animation
+      let animationId: number | null = null;
 
       const animateZoom = () => {
         progress += clock.getDelta() / zoomDuration;
@@ -1119,11 +1157,19 @@ export default function Home() {
         controls.update();
 
         if (progress < 1) {
-          requestAnimationFrame(animateZoom);
+          animationId = requestAnimationFrame(animateZoom);
+        } else {
+          animationId = null;
         }
       };
 
+      // Cancel any previous animation
+      if ((current as any).zoomAnimation) {
+        cancelAnimationFrame((current as any).zoomAnimation);
+      }
+      
       animateZoom();
+      (current as any).zoomAnimation = animationId;
 
       // Open the details panel first
       setShowDetails(true);
@@ -1159,17 +1205,54 @@ export default function Home() {
     function selectStar(starMesh: any) {
       const systemName = starMesh.userData.systemName;
 
-      // Set the selected star name in state
-      setSelectedStar(systemName);
       setActive(systemName); // Update the title bar to show star name
 
       // Get world position of the star
       const wp = new THREE.Vector3();
       starMesh.getWorldPosition(wp);
 
-      // Calculate zoom position - show the star and its orbits
-      const camTarget = wp.clone();
-      const camPos = wp.clone().add(new THREE.Vector3(0, 60, 150)); // Pulled back to show full orbits
+      // Find the system data to calculate orbit extents
+      const sys = dataRef.current.find((s) => s.name === systemName);
+      
+      // Calculate maximum orbit extent to ensure all planets fit in view
+      let maxAU = 0;
+      if (sys) {
+        sys.planets.forEach((p) => {
+          const a = Math.max(0.004, p.a_au);
+          const e = Math.min(0.95, Math.max(0, p.e || 0));
+          const aU = scaleAU(a, logScale);
+          // Account for eccentricity - max distance is at aphelion
+          maxAU = Math.max(maxAU, aU * (1 + e));
+        });
+      }
+      
+      // Calculate zoom position - center the star in the view
+      const camTarget = wp.clone(); // Target is the star's position (center of screen)
+      
+      // Calculate camera distance based on orbit size to fit all planets
+      // Add buffer factor to ensure orbits are comfortably visible
+      const baseDistance = 200;
+      const orbitBasedDistance = maxAU > 0 ? Math.max(baseDistance, maxAU * 1.8) : baseDistance;
+      const distance = Math.min(1500, orbitBasedDistance); // Cap at max distance
+      
+      // Height offset scales with system size
+      const heightOffset = maxAU > 0 ? Math.min(400, 80 + maxAU * 0.35) : 80;
+      
+      // Direction from star to current camera position
+      const directionToCamera = new THREE.Vector3()
+        .subVectors(camera.position, wp)
+        .normalize();
+      
+      // If we're very close or the direction is invalid, use a default angle
+      if (directionToCamera.length() < 0.1) {
+        directionToCamera.set(0, 0.3, 1).normalize();
+      }
+      
+      // Position camera at distance from star, slightly elevated
+      const camPos = wp.clone().add(
+        directionToCamera.multiplyScalar(distance)
+      );
+      camPos.y += heightOffset; // Add height for better orbital view
 
       // Animate smooth zoom using lerp in animation loop
       const startPos = camera.position.clone();
@@ -1181,6 +1264,7 @@ export default function Home() {
 
       let progress = 0;
       const zoomDuration = 1.0; // 1 second animation
+      let animationId: number | null = null;
 
       const animateZoom = () => {
         progress += clock.getDelta() / zoomDuration;
@@ -1206,18 +1290,24 @@ export default function Home() {
         controls.update();
 
         if (progress < 1) {
-          requestAnimationFrame(animateZoom);
+          animationId = requestAnimationFrame(animateZoom);
+        } else {
+          animationId = null;
         }
       };
 
+      // Cancel any previous animation
+      if ((current as any).zoomAnimation) {
+        cancelAnimationFrame((current as any).zoomAnimation);
+      }
+
       animateZoom();
+      (current as any).zoomAnimation = animationId;
 
       // Open the details panel first
       setShowDetails(true);
 
-      // Find the system data to display stellar properties
-      const sys = dataRef.current.find((s) => s.name === systemName);
-
+      // System data was already retrieved above for orbit calculations
       // Then populate the star information with a small delay to ensure the panel is rendered
       setTimeout(() => {
         if (detailsRef.current) {
@@ -1275,60 +1365,77 @@ export default function Home() {
       const right = new THREE.Vector3();
       right.crossVectors(forward, camera.up).normalize();
 
+      // Track if user is actively moving with keyboard
+      const isMoving = keys.w || keys.s || keys.a || keys.d || keys.q || keys.e || 
+                       keys.arrowup || keys.arrowdown || keys.arrowleft || keys.arrowright;
+
       // WASD or Arrow keys for movement
       if (keys.w || keys.arrowup) {
         camera.position.addScaledVector(forward, moveAmount);
-        const newTarget = forward.clone().multiplyScalar(moveAmount);
-        controls.target.set(
-          controls.target.x + newTarget.x,
-          controls.target.y + newTarget.y,
-          controls.target.z + newTarget.z
-        );
+        // Only move target if user is actively moving (to break lock)
+        if (isMoving) {
+          const newTarget = forward.clone().multiplyScalar(moveAmount);
+          controls.target.set(
+            controls.target.x + newTarget.x,
+            controls.target.y + newTarget.y,
+            controls.target.z + newTarget.z
+          );
+        }
       }
       if (keys.s || keys.arrowdown) {
         camera.position.addScaledVector(forward, -moveAmount);
-        const newTarget = forward.clone().multiplyScalar(-moveAmount);
-        controls.target.set(
-          controls.target.x + newTarget.x,
-          controls.target.y + newTarget.y,
-          controls.target.z + newTarget.z
-        );
+        if (isMoving) {
+          const newTarget = forward.clone().multiplyScalar(-moveAmount);
+          controls.target.set(
+            controls.target.x + newTarget.x,
+            controls.target.y + newTarget.y,
+            controls.target.z + newTarget.z
+          );
+        }
       }
       if (keys.a || keys.arrowleft) {
         camera.position.addScaledVector(right, -moveAmount);
-        const newTarget = right.clone().multiplyScalar(-moveAmount);
-        controls.target.set(
-          controls.target.x + newTarget.x,
-          controls.target.y + newTarget.y,
-          controls.target.z + newTarget.z
-        );
+        if (isMoving) {
+          const newTarget = right.clone().multiplyScalar(-moveAmount);
+          controls.target.set(
+            controls.target.x + newTarget.x,
+            controls.target.y + newTarget.y,
+            controls.target.z + newTarget.z
+          );
+        }
       }
       if (keys.d || keys.arrowright) {
         camera.position.addScaledVector(right, moveAmount);
-        const newTarget = right.clone().multiplyScalar(moveAmount);
-        controls.target.set(
-          controls.target.x + newTarget.x,
-          controls.target.y + newTarget.y,
-          controls.target.z + newTarget.z
-        );
+        if (isMoving) {
+          const newTarget = right.clone().multiplyScalar(moveAmount);
+          controls.target.set(
+            controls.target.x + newTarget.x,
+            controls.target.y + newTarget.y,
+            controls.target.z + newTarget.z
+          );
+        }
       }
 
       // Q/E for vertical movement
       if (keys.q) {
         camera.position.y -= moveAmount;
-        controls.target.set(
-          controls.target.x,
-          controls.target.y - moveAmount,
-          controls.target.z
-        );
+        if (isMoving) {
+          controls.target.set(
+            controls.target.x,
+            controls.target.y - moveAmount,
+            controls.target.z
+          );
+        }
       }
       if (keys.e) {
         camera.position.y += moveAmount;
-        controls.target.set(
-          controls.target.x,
-          controls.target.y + moveAmount,
-          controls.target.z
-        );
+        if (isMoving) {
+          controls.target.set(
+            controls.target.x,
+            controls.target.y + moveAmount,
+            controls.target.z
+          );
+        }
       }
 
       controls.update();
@@ -1401,6 +1508,34 @@ export default function Home() {
         });
       }
 
+      // Animate star blinking/pulsing with slow, subtle variations
+      if (current.stars && current.stars.length > 0) {
+        const time = clock.getElapsedTime();
+        current.stars.forEach((star: any, index: number) => {
+          // Skip animation for hovered star - it maintains its bright hover state
+          if (star === hoveredStar) return;
+          
+          const phaseOffset = index * 0.7;
+          
+          // Very slow pulsing (period of ~3-5 seconds per star)
+          const pulseSpeed = 0.4 + (index % 5) * 0.1; // Vary speed slightly between stars
+          const pulse = Math.sin(time * pulseSpeed + phaseOffset);
+          
+          // Subtle intensity variation (±10-15%)
+          const baseIntensity = star.userData.type === "star" && mode === "earth" ? 1.5 : 0.8;
+          const intensityVariation = pulse * 0.12 + 0.88; // Ranges from 0.76 to 1.0
+          const newIntensity = baseIntensity * intensityVariation;
+          
+          if (star.material && star.material.emissiveIntensity !== undefined) {
+            star.material.emissiveIntensity = newIntensity;
+            // Store the original intensity for hover effect
+            if (star.userData.originalIntensity === undefined) {
+              star.userData.originalIntensity = baseIntensity;
+            }
+          }
+        });
+      }
+
       for (const m of current.planets) {
         const p: any = (m as any).userData;
         const e = Math.min(0.95, Math.max(0, p.e || 0));
@@ -1428,6 +1563,91 @@ export default function Home() {
       }
       renderer.render(scene, camera);
     }
+
+    // Track hovered star and planet for brightness effect
+    let hoveredStar: any = null;
+    let hoveredPlanet: any = null;
+
+    // Pointer hover detection
+    renderer.domElement.addEventListener("pointermove", (e: PointerEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const mouse = new THREE.Vector2();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      ray.setFromCamera(mouse, camera);
+
+      // Check for star hover first
+      const starHits = ray.intersectObjects(current.stars, false);
+      
+      if (starHits.length) {
+        const newHoveredStar = starHits[0].object as any;
+        
+        // If hovering over a different star
+        if (newHoveredStar !== hoveredStar) {
+          // Reset previous hovered star
+          if (hoveredStar && hoveredStar.material) {
+            hoveredStar.material.emissiveIntensity = hoveredStar.userData.originalIntensity || 0.8;
+          }
+          
+          // Brighten new hovered star
+          if (newHoveredStar.material && newHoveredStar.material.emissiveIntensity !== undefined) {
+            // Store original intensity if not already stored
+            if (newHoveredStar.userData.originalIntensity === undefined) {
+              newHoveredStar.userData.originalIntensity = newHoveredStar.material.emissiveIntensity;
+            }
+            // Boost brightness significantly on hover
+            newHoveredStar.material.emissiveIntensity = (newHoveredStar.userData.originalIntensity || 0.8) * 2.5;
+          }
+          
+          hoveredStar = newHoveredStar;
+          renderer.domElement.style.cursor = "pointer";
+        }
+        
+        // Reset hovered planet if we're hovering over a star
+        if (hoveredPlanet && hoveredPlanet.material) {
+          hoveredPlanet.material.emissive.multiplyScalar(1 / 1.5); // Reset to original
+          hoveredPlanet = null;
+        }
+      } else {
+        // Check for planet hover
+        const planetHits = ray.intersectObjects(current.planets, false);
+        
+        if (planetHits.length) {
+          const newHoveredPlanet = planetHits[0].object as any;
+          
+          // If hovering over a different planet
+          if (newHoveredPlanet !== hoveredPlanet) {
+            // Reset previous hovered planet
+            if (hoveredPlanet && hoveredPlanet.material) {
+              hoveredPlanet.material.emissive.multiplyScalar(1 / 1.5); // Reset
+            }
+            
+            // Brighten new hovered planet
+            if (newHoveredPlanet.material && newHoveredPlanet.material.emissive) {
+              newHoveredPlanet.material.emissive.multiplyScalar(1.5); // Brighten
+            }
+            
+            hoveredPlanet = newHoveredPlanet;
+          }
+          
+          renderer.domElement.style.cursor = "pointer";
+        } else {
+          renderer.domElement.style.cursor = "default";
+          
+          // Reset hovered planet
+          if (hoveredPlanet && hoveredPlanet.material) {
+            hoveredPlanet.material.emissive.multiplyScalar(1 / 1.5);
+            hoveredPlanet = null;
+          }
+        }
+        
+        // Reset hovered star if mouse moved away
+        if (hoveredStar && hoveredStar.material) {
+          hoveredStar.material.emissiveIntensity = hoveredStar.userData.originalIntensity || 0.8;
+          hoveredStar = null;
+        }
+      }
+    });
 
     // Pointer picking
     renderer.domElement.addEventListener("pointerdown", (e: PointerEvent) => {
@@ -1461,6 +1681,7 @@ export default function Home() {
       clock,
       buildSystem,
       buildEarthCentered,
+      buildExplore: buildEarthCentered, // Alias for explore mode
       selectPlanet,
       selectStar,
     } as any;
@@ -1469,6 +1690,7 @@ export default function Home() {
 
     return () => {
       cancelAnimationFrame(sceneRef.current?.raf || 0);
+      clearInterval(userInteractionDetector);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
@@ -1513,14 +1735,13 @@ export default function Home() {
       return;
     }
     const sys = data.find((x) => x.name === active) || data[0];
-    // Rebuild to apply exSizes/logScale/showHZ changes
     // Clear details on rebuild
     if (detailsRef.current)
       detailsRef.current.textContent =
         "Select a planet to see parameters and evidence.";
     s.buildSystem(sys);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exSizes, logScale, showHZ, mode, dimOrbits]);
+  }, [exSizes, logScale, mode, dimOrbits]);
 
   // Dim orbit material opacity live toggle - now orbits are always visible
   useEffect(() => {
@@ -1529,7 +1750,7 @@ export default function Home() {
     // Orbits are now always visible with consistent styling
     s.current.orbits.forEach((o: any) => {
       // Keep the enhanced visibility
-      (o.material as any).opacity = 0.8;
+      (o.material as any).opacity = 0.85;
       (o.material as any).color.setHex(0x5588dd);
     });
   }, [dimOrbits]);
@@ -1549,9 +1770,6 @@ export default function Home() {
   function resetCam() {
     const s = sceneRef.current;
     if (!s) return;
-
-    // Clear selected star when resetting camera
-    setSelectedStar(null);
 
     if (mode === "explore") {
       s.camera.position.set(0, 600, 1200);
@@ -1576,7 +1794,6 @@ export default function Home() {
     if (!s) return;
 
     // Clear selected star and sidebar viewing state
-    setSelectedStar(null);
     setViewingFromSidebar(false);
     setActive(null);
 
@@ -1684,7 +1901,6 @@ export default function Home() {
           speedVal={speedVal}
           onReset={resetCam}
           modeLabel={modeLabel}
-          selectedStar={selectedStar}
           onBackToMain={backToMainView}
           showBackButton={viewingFromSidebar}
         />
@@ -1710,10 +1926,10 @@ export default function Home() {
           line2={
             mode === "earth" ? (
               <>
-                Heliocentric view • Exoplanet systems at celestial coordinates
+                Heliocentric view • Press ESC to unlock camera
               </>
             ) : (
-              <>Speed via Kepler's 2nd law</>
+              <>Speed via Kepler's 2nd law • Press ESC to unlock camera</>
             )
           }
         />

@@ -3,9 +3,43 @@ export const AU_TO_U = 120;
 
 // Map stellar Teff (3000–8000K) to a blue→red-ish color via HSL
 export function teffColor(T: number, THREE: typeof import('three')): any{
-  const clamped = Math.max(3000, Math.min(8000, T));
-  const h = ((clamped - 3000) / 7000) * 0.7; // 0..0.7 (roughly blue→yellow)
-  return new (THREE as any).Color().setHSL(h, 1.0, 0.6);
+  const clamped = Math.max(2500, Math.min(10000, T));
+  
+  let h: number, s: number, l: number;
+  
+  if (clamped < 3500) {
+    // Cool red stars (M-class)
+    const t = (clamped - 2500) / 1000;
+    h = 0.0 + t * 0.05; // 0.0 to 0.05 (red to orange-red)
+    s = 0.9 - t * 0.2;
+    l = 0.5;
+  } else if (clamped < 5000) {
+    // Orange stars (K-class)
+    const t = (clamped - 3500) / 1500;
+    h = 0.05 + t * 0.08; // 0.05 to 0.13 (orange-red to orange-yellow)
+    s = 0.7 - t * 0.1;
+    l = 0.55 + t * 0.05;
+  } else if (clamped < 6000) {
+    // Yellow stars (G-class, like our Sun)
+    const t = (clamped - 5000) / 1000;
+    h = 0.13 + t * 0.03; // 0.13 to 0.16 (yellow-orange to yellow)
+    s = 0.6 - t * 0.3;
+    l = 0.60 + t * 0.1;
+  } else if (clamped < 7500) {
+    // White to blue-white stars (F-class)
+    const t = (clamped - 6000) / 1500;
+    h = 0.16 + t * 0.37; // 0.16 to 0.53 (yellow to light blue)
+    s = 0.3 - t * 0.2;
+    l = 0.70 + t * 0.1;
+  } else {
+    // Blue-white to blue stars (A, B, O-class)
+    const t = Math.min((clamped - 7500) / 2500, 1.0);
+    h = 0.53 + t * 0.07; // 0.53 to 0.60 (light blue to blue)
+    s = 0.1 + t * 0.4;
+    l = 0.75 + t * 0.05;
+  }
+  
+  return new (THREE as any).Color().setHSL(h, s, l);
 }
 
 // Map planet equilibrium temperature (pl_eqt) to color
