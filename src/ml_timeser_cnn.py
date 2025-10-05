@@ -1,177 +1,142 @@
+import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import scipy
-from scipy.ndimage import gaussian_filter1d
-from sklearn.preprocessing import normalize
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, ConfusionMatrixDisplay
+from sklearn.preprocessing import normalize, StandardScaler
+from sklearn.metrics import (
+    accuracy_score, confusion_matrix, classification_report, ConfusionMatrixDisplay
+)
 from imblearn.over_sampling import RandomOverSampler
-import seaborn as sns
+from scipy.ndimage import gaussian_filter1d
+import scipy.fft
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-import sklearn.svm as svm
-from sklearn.model_selection import GridSearchCV
 
-# ---------------------------
-# 0) Utils
-# ---------------------------
+# ------------------------------------------------------------
+# 1. Configuration
+# ------------------------------------------------------------
+from models import FCNModel  # your models.py file (BatchNorm can be replaced below)
+
+DATA_PATH = "data/processed_tess/tess_data_2000_filtered.csv"
+OUTPUT_DIR = "outputs_CNN_model"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+BATCH_SIZE = 64
+EPOCHS = 25
+LR = 1e-4             # reduced LR for stability
+SIGMA = 7.0
+SEED = 42
+
+# ------------------------------------------------------------
+# 2. Utils
+# ------------------------------------------------------------
 def set_seed(seed=42):
     import random, os
-    random.seed(seed); np.random.seed(seed); torch.manual_seed(seed); torch.cuda.manual_seed_all(seed)
-set_seed(42)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+set_seed(SEED)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Device:", device)
+print("🖥️ Using device:", device)
 
-# ---------------------------
-# 1) Load data (CSV)
-# ---------------------------
-# Replace with your paths
-train_csv = "/home/senad/DataSet/exoplanet/exoTrain.csv"
-test_csv  = "/home/senad/DataSet/exoplanet/exoTest.csv"
+# ------------------------------------------------------------
+# 3. Load data
+# ------------------------------------------------------------
+df = pd.read_csv(DATA_PATH)
+print("Loaded:", df.shape, "columns")
 
-df_train = pd.read_csv(train_csv)
-df_test  = pd.read_csv(test_csv)
+# Split features and labels
+X = df.drop(columns=["label"]).values.astype(np.float32)
+y = df["label"].astype(np.float32).values
 
-# Many exoplanet CSVs have label in the first column (e.g., named 'LABEL' or index 0).
-# We’ll robustly extract:
-label_col = df_train.columns[0]
-y_train_raw = df_train[label_col].values
-y_test_raw  = df_test[label_col].values
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=SEED, stratify=y
+)
 
-# Convert labels to {0,1}
-# If labels are already 0/1 this is a no-op; if not (e.g., 1/2) this maps to 0/1.
-y_train = ((y_train_raw - y_train_raw.min()) / (y_train_raw.max() - y_train_raw.min())).astype(int)
-y_test  = ((y_test_raw  - y_test_raw.min())  / (y_test_raw.max()  - y_test_raw.min())).astype(int)
+print("SANITY CHECKS:")
+print("Unique train labels:", np.unique(y_train, return_counts=True))
+print("Unique test  labels:", np.unique(y_test,  return_counts=True))
 
-# Drop the label column to get the time-series features
-X_train = df_train.drop(columns=[label_col]).values
-X_test  = df_test.drop(columns=[label_col]).values
 
-# Optional: shuffle (your original used permutation)
-perm_tr = np.random.permutation(len(X_train))
-perm_te = np.random.permutation(len(X_test))
-X_train, y_train = X_train[perm_tr], y_train[perm_tr]
-X_test,  y_test  = X_test[perm_te],  y_test[perm_te]
+# ------------------------------------------------------------
+# 4. Normalize + smooth + FFT (with log scaling + standardization)
+# ------------------------------------------------------------
+# Row-wise L2 normalization
+X_train = normalize(X_train)
+X_test = normalize(X_test)
 
-# ---------------------------
-# 2) Normalize rows (L2) and Gaussian smooth like before
-# ---------------------------
-X_train_norm = normalize(X_train)  # row-wise L2
-X_test_norm  = normalize(X_test)
+# Gaussian smoothing per sample
+X_train = np.apply_along_axis(lambda r: gaussian_filter1d(r, sigma=SIGMA), 1, X_train)
+X_test = np.apply_along_axis(lambda r: gaussian_filter1d(r, sigma=SIGMA), 1, X_test)
 
-# Gaussian smoothing per row (equivalent to your gaussian_filter on axis=1)
-sigma = 7.0
-X_train_smooth = np.apply_along_axis(lambda r: gaussian_filter1d(r, sigma=sigma), 1, X_train_norm)
-X_test_smooth  = np.apply_along_axis(lambda r: gaussian_filter1d(r, sigma=sigma), 1, X_test_norm)
+# FFT magnitude → log(1 + abs(FFT))
+X_train_fft = np.log1p(np.abs(scipy.fft.fft(X_train, axis=1)))
+X_test_fft  = np.log1p(np.abs(scipy.fft.fft(X_test, axis=1)))
 
-# ---------------------------
-# 3) FFT magnitude as features (same as your scipy.fft.fft2(abs))
-# ---------------------------
-# Your code used fft2 with axes=1; since data are 1D series, fft along axis=1 is sufficient:
-X_train_fft = np.abs(scipy.fft.fft(X_train_smooth, axis=1))
-X_test_fft  = np.abs(scipy.fft.fft(X_test_smooth, axis=1))
+# Standardize frequency-domain features
+scaler = StandardScaler()
+X_train_fft = scaler.fit_transform(X_train_fft)
+X_test_fft  = scaler.transform(X_test_fft)
 
-len_seq = X_train_fft.shape[1]
+print("FFT shape:", X_train_fft.shape)
+print("Train mean/std:", np.mean(X_train_fft), np.std(X_train_fft))
 
-# ---------------------------
-# 4) Oversampling to balance
-# ---------------------------
-ros = RandomOverSampler(sampling_strategy=0.5, random_state=42)  # keep at least 1:2 minority:majority
+# ------------------------------------------------------------
+# 5. Balance training data
+# ------------------------------------------------------------
+ros = RandomOverSampler(random_state=SEED)
 X_train_bal, y_train_bal = ros.fit_resample(X_train_fft, y_train)
-print("After oversampling -> class 1:", np.sum(y_train_bal == 1), "class 0:", np.sum(y_train_bal == 0))
+print(f"After balancing -> class0={np.sum(y_train_bal==0)}, class1={np.sum(y_train_bal==1)}")
+print("Unique vals:", np.unique(y_train_bal), np.unique(y_test))
 
-# ---------------------------
-# 5) PyTorch Dataset/Dataloader
-# ---------------------------
-class ExoDataset(Dataset):
+# ------------------------------------------------------------
+# 6. Dataset / Dataloader
+# ------------------------------------------------------------
+class TessDataset(Dataset):
     def __init__(self, X, y):
-        # X: (N, L) -> we’ll add channel dim on __getitem__
         self.X = X.astype(np.float32)
         self.y = y.astype(np.float32)
-    def __len__(self):
-        return len(self.X)
+    def __len__(self): return len(self.X)
     def __getitem__(self, idx):
-        x = self.X[idx]             # shape (L,)
-        x = x[None, :]              # shape (1, L) for Conv1d
+        x = self.X[idx][None, :]  # (1, seq_len)
         y = self.y[idx]
-        return torch.from_numpy(x), torch.tensor([y])
+        return torch.from_numpy(x), torch.tensor(y, dtype=torch.float32)
 
-train_ds = ExoDataset(X_train_bal, y_train_bal)
-test_ds  = ExoDataset(X_test_fft,  y_test)
 
-train_loader = DataLoader(train_ds, batch_size=64, shuffle=True, num_workers=0)
-test_loader  = DataLoader(test_ds,  batch_size=256, shuffle=False, num_workers=0)
+train_ds = TessDataset(X_train_bal, y_train_bal)
+test_ds  = TessDataset(X_test_fft, y_test)
 
-# ---------------------------
-# 6) FCN model (PyTorch) — mirrors your Keras architecture
-# ---------------------------
-class FCNModel(nn.Module):
-    def __init__(self, seq_len):
-        super().__init__()
-        self.conv1 = nn.Conv1d(1, 256, kernel_size=8)
-        self.pool1 = nn.MaxPool1d(kernel_size=5, stride=5)
-        self.bn1   = nn.BatchNorm1d(256)
+train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
+test_loader  = DataLoader(test_ds,  batch_size=256, shuffle=False)
 
-        self.conv2 = nn.Conv1d(256, 340, kernel_size=6)
-        self.pool2 = nn.MaxPool1d(kernel_size=5, stride=5)
-        self.bn2   = nn.BatchNorm1d(340)
+# ------------------------------------------------------------
+# 7. Model, loss, optimizer
+# ------------------------------------------------------------
+seq_len = X_train_fft.shape[1]
+model = FCNModel(seq_len).to(device)
 
-        self.conv3 = nn.Conv1d(340, 256, kernel_size=4)
-        self.pool3 = nn.MaxPool1d(kernel_size=5, stride=5)
-        self.bn3   = nn.BatchNorm1d(256)
+# Disable BatchNorm if dataset small → replace with Identity
+for name, module in model.named_children():
+    if isinstance(module, nn.BatchNorm1d):
+        setattr(model, name, nn.Identity())
 
-        self.dropout = nn.Dropout(0.3)
+criterion = nn.BCEWithLogitsLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
-        # figure out flatten size
-        with torch.no_grad():
-            dummy = torch.zeros(1, 1, seq_len)
-            h = self.pool1(F.relu(self.conv1(dummy)))
-            h = self.bn1(h)
-            h = self.pool2(F.relu(self.conv2(h)))
-            h = self.bn2(h)
-            h = self.pool3(F.relu(self.conv3(h)))
-            h = self.bn3(h)
-            flat = h.view(1, -1).shape[1]
-
-        self.fc1 = nn.Linear(flat, 24)
-        self.fc2 = nn.Linear(24, 12)
-        self.fc3 = nn.Linear(12, 8)
-        self.fc4 = nn.Linear(8, 1)  # BCEWithLogits
-
-    def forward(self, x):
-        x = self.pool1(F.relu(self.conv1(x)))
-        x = self.bn1(x)
-        x = self.pool2(F.relu(self.conv2(x)))
-        x = self.bn2(x)
-        x = self.pool3(F.relu(self.conv3(x)))
-        x = self.bn3(x)
-        x = torch.flatten(x, 1)
-        x = self.dropout(x)
-        x = F.relu(self.fc1(x)); x = self.dropout(x)
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        logits = self.fc4(x)       # no sigmoid here
-        return logits
-
-model = FCNModel(len_seq).to(device)
 print(model)
 
-# ---------------------------
-# 7) Train
-# ---------------------------
-criterion = nn.BCEWithLogitsLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-epochs = 15
-
-train_losses = []
-train_accs = []
-val_accs = []
-
-def evaluate_accuracy(loader):
+# ------------------------------------------------------------
+# 8. Training loop
+# ------------------------------------------------------------
+def evaluate(loader):
     model.eval()
     y_true, y_prob = [], []
     with torch.no_grad():
@@ -179,82 +144,80 @@ def evaluate_accuracy(loader):
             xb, yb = xb.to(device), yb.to(device)
             logits = model(xb)
             prob = torch.sigmoid(logits)
-            y_true.append(yb.cpu().numpy())
-            y_prob.append(prob.cpu().numpy())
-    y_true = np.vstack(y_true).ravel()
-    y_prob = np.vstack(y_prob).ravel()
+            y_true.extend(yb.cpu().numpy().ravel())
+            y_prob.extend(prob.cpu().numpy().ravel())
+    y_true = np.array(y_true)
+    y_prob = np.array(y_prob)
     y_pred = (y_prob >= 0.5).astype(int)
     return accuracy_score(y_true, y_pred)
 
-for ep in range(1, epochs+1):
+
+train_losses, train_accs, val_accs = [], [], []
+
+for epoch in range(1, EPOCHS + 1):
     model.train()
-    running_loss, running_correct, total = 0.0, 0, 0
+    total_loss, correct, total = 0, 0, 0
     for xb, yb in train_loader:
         xb, yb = xb.to(device), yb.to(device)
         optimizer.zero_grad()
         logits = model(xb)
-        loss = criterion(logits, yb)
+        loss = criterion(logits, yb.unsqueeze(1))
         loss.backward()
         optimizer.step()
 
-        running_loss += loss.item() * xb.size(0)
+        total_loss += loss.item() * xb.size(0)
         with torch.no_grad():
-            prob = torch.sigmoid(logits)
-            pred = (prob >= 0.5).float()
-            running_correct += (pred.eq(yb)).sum().item()
+            preds = (torch.sigmoid(logits) >= 0.5).float()
+            correct += (preds.eq(yb)).sum().item()
             total += yb.numel()
 
-    train_loss = running_loss / total
-    train_acc = running_correct / total
-    val_acc = evaluate_accuracy(test_loader)
-    train_losses.append(train_loss); train_accs.append(train_acc); val_accs.append(val_acc)
-    print(f"Epoch {ep:02d} | loss {train_loss:.4f} | acc {train_acc:.4f} | val_acc {val_acc:.4f}")
+    train_loss = total_loss / total
+    train_acc = correct / total
+    val_acc = evaluate(test_loader)
+    train_losses.append(train_loss)
+    train_accs.append(train_acc)
+    val_accs.append(val_acc)
+    print(f"Epoch {epoch:02d}: loss={train_loss:.4f} train_acc={train_acc:.4f} val_acc={val_acc:.4f}")
 
-# ---------------------------
-# 8) Curves
-# ---------------------------
-plt.figure(); plt.plot(train_accs, label="train_acc"); plt.plot(val_accs, label="val_acc")
-plt.xlabel("epoch"); plt.ylabel("accuracy"); plt.title("Accuracy"); plt.legend(); plt.grid(True); plt.show()
+# ------------------------------------------------------------
+# 9. Curves
+# ------------------------------------------------------------
+plt.figure()
+plt.plot(train_accs, label="train_acc")
+plt.plot(val_accs, label="val_acc")
+plt.legend(); plt.title("Accuracy"); plt.grid()
+plt.savefig(os.path.join(OUTPUT_DIR, "accuracy.png"))
+plt.show()
 
-plt.figure(); plt.plot(train_losses, label="train_loss")
-plt.xlabel("epoch"); plt.ylabel("loss"); plt.title("Loss"); plt.legend(); plt.grid(True); plt.show()
+plt.figure()
+plt.plot(train_losses, label="loss")
+plt.legend(); plt.title("Loss"); plt.grid()
+plt.savefig(os.path.join(OUTPUT_DIR, "loss.png"))
+plt.show()
 
-# ---------------------------
-# 9) Evaluate on test set (metrics + confusion matrix)
-# ---------------------------
+# ------------------------------------------------------------
+# 10. Evaluation on test set
+# ------------------------------------------------------------
 model.eval()
 y_true, y_prob = [], []
 with torch.no_grad():
     for xb, yb in test_loader:
-        xb = xb.to(device)
+        xb, yb = xb.to(device), yb
         logits = model(xb)
         prob = torch.sigmoid(logits).cpu().numpy().ravel()
-        y_prob.append(prob)
-        y_true.append(yb.numpy().ravel())
-y_true = np.concatenate(y_true)
-y_prob = np.concatenate(y_prob)
+        y_prob.extend(prob)
+        y_true.extend(yb.numpy().ravel())
+
+y_true = np.array(y_true)
+y_prob = np.array(y_prob)
 y_pred = (y_prob >= 0.5).astype(int)
 
-print("Test accuracy:", accuracy_score(y_true, y_pred))
-print(classification_report(y_true, y_pred, target_names=["NO exoplanet confirmed","YES exoplanet confirmed"]))
+print("\n✅ Test Accuracy:", accuracy_score(y_true, y_pred))
+print(classification_report(y_true, y_pred, target_names=["class 0 (FP/FA)", "class 1 (CP/KP)"]))
 
 cm = confusion_matrix(y_true.astype(int), y_pred.astype(int))
-disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["No","Yes"])
-disp.plot(cmap="Blues"); plt.title("PyTorch FCN Confusion Matrix"); plt.show()
-
-# ---------------------------
-# 10) SVC baseline on the same FFT features
-# ---------------------------
-params = [
-    {'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': [1, 10, 100, 1000]},
-    {'kernel': ['linear'], 'C': [1, 10, 100, 1000]}
-]
-svc = GridSearchCV(svm.SVC(), param_grid=params, scoring='recall', n_jobs=-1)
-svc.fit(X_train_bal, y_train_bal)
-y_svc = svc.predict(X_test_fft)
-
-print("\nSVC baseline:")
-print(classification_report(y_test, y_svc, target_names=["NO exoplanet confirmed","YES exoplanet confirmed"]))
-cm2 = confusion_matrix(y_test.astype(int), y_svc.astype(int))
-disp2 = ConfusionMatrixDisplay(confusion_matrix=cm2, display_labels=["No","Yes"])
-disp2.plot(cmap="Blues"); plt.title("SVC Confusion Matrix"); plt.show()
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["class 0", "class 1"])
+disp.plot(cmap="Blues")
+plt.title("FCN Confusion Matrix")
+plt.savefig(os.path.join(OUTPUT_DIR, "confusion_matrix.png"))
+plt.show()

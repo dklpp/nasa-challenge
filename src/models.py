@@ -72,28 +72,28 @@ def SVC_model():
     clf = GridSearchCV(SVC(), param_grid=tuned_parameters, scoring='recall')
     return clf
 
-# Example input sequence length
-len_seq = 2000
+# # Example input sequence length
+# len_seq = 2000
 
-model = FCNModel(len_seq)
-print(model)
+# model = FCNModel(len_seq)
+# print(model)
 
-# Example input batch (batch_size=8)
-x = torch.randn(8, 1, len_seq)
-y_pred = model(x)
-print("Output shape:", y_pred.shape)
+# # Example input batch (batch_size=8)
+# x = torch.randn(8, 1, len_seq)
+# y_pred = model(x)
+# print("Output shape:", y_pred.shape)
 
-import torch.optim as optim
+# import torch.optim as optim
 
-criterion = nn.BCELoss()  # for binary classification
-optimizer = optim.Adam(model.parameters(), lr=1e-3)
+# criterion = nn.BCELoss()  # for binary classification
+# optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
-for epoch in range(10):
-    optimizer.zero_grad()
-    outputs = model(x)
-    labels = torch.randint(0, 2, (8, 1), dtype=torch.float32)  # dummy labels
-    loss = criterion(outputs, labels)
-    loss.backward()
-    optimizer.step()
-    print(f"Epoch {epoch+1}: Loss={loss.item():.4f}")
+# for epoch in range(10):
+#     optimizer.zero_grad()
+#     outputs = model(x)
+#     labels = torch.randint(0, 2, (8, 1), dtype=torch.float32)  # dummy labels
+#     loss = criterion(outputs, labels)
+#     loss.backward()
+#     optimizer.step()
+#     print(f"Epoch {epoch+1}: Loss={loss.item():.4f}")
 
