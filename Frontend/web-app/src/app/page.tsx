@@ -19,6 +19,7 @@ import Legend from "../components/Legend";
 import DetailsPanel from "../components/DetailsPanel";
 import Toast from "../components/Toast";
 import UploadModal from "../components/UploadModal";
+import ModelPredictionModal from "../components/ModelPredictionModal";
 
 type Planet = (PlanetT & Partial<{ radius_rj: number; radius_re: number }>) & {
   aU?: number;
@@ -43,6 +44,8 @@ export default function Home() {
   const [showDetails, setShowDetails] = useState(false);
   const [viewingFromSidebar, setViewingFromSidebar] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showModelPrediction, setShowModelPrediction] = useState(false);
+  const [pendingSystem, setPendingSystem] = useState<SystemT | null>(null);
   const [customSystemNames, setCustomSystemNames] = useState<Set<string>>(
     new Set()
   );
@@ -764,7 +767,7 @@ smoothCamTo(
 );
     }
 
-    function buildEarthCentered(systems: Sys[]) {
+    function buildEarthCentered(systems: Sys[], skipCameraAnimation = false) {
       // Note: Despite the name, this creates a heliocentric (Sun-centered) view
       // with exoplanet systems positioned by their celestial coordinates
       clearSystem();
@@ -1175,7 +1178,11 @@ const aU = aU0 * mult;
 
       // Position camera for a wider overview showing orbits around distant stars
       controls.maxDistance = 15000;
-smoothCamTo(new THREE.Vector3(200, 250, 500), new THREE.Vector3(0, 0, 0), 1.2);
+      
+      // Only animate camera if not skipping (i.e., not rebuilding after upload)
+      if (!skipCameraAnimation) {
+        smoothCamTo(new THREE.Vector3(200, 250, 500), new THREE.Vector3(0, 0, 0), 1.2);
+      }
     }
 
     function selectPlanet(m: any) {
@@ -1892,26 +1899,35 @@ if (mode === "explore") {
   }
 
   function handleUploadSystem(system: SystemT) {
-    // Add the new system to the data array
-    const updatedData = [...data, system];
+    setPendingSystem(system);
+    setShowUploadModal(false);
+    
+    setTimeout(() => {
+      setShowModelPrediction(true);
+    }, 100);
+  }
+
+  function handleShowInSpace() {
+    if (!pendingSystem) return;
+    
+    const updatedData = [...data, pendingSystem];
     setData(updatedData);
 
-    // Track this as a custom system for highlighting
-    setCustomSystemNames((prev) => new Set(prev).add(system.name));
+    setCustomSystemNames((prev) => new Set(prev).add(pendingSystem.name));
 
     showToast(
-      `✨ ${system.name} added! Look for the glowing green highlight in the map!`,
+      `✨ ${pendingSystem.name} added! Look for the glowing green highlight in the map!`,
       3000
     );
 
-    // If we're in earth mode, rebuild the scene to show the new system
     const s = sceneRef.current;
     if (s && mode === "earth") {
-      // Use setTimeout to ensure state has updated
       setTimeout(() => {
-        s.buildEarthCentered(updatedData);
+        s.buildEarthCentered(updatedData, true); // Skip camera animation when rebuilding after upload
       }, 50);
     }
+
+    setPendingSystem(null);
   }
 
   const speedVal = useMemo(() => speed.toFixed(2) + "×", [speed]);
@@ -2066,6 +2082,15 @@ if (mode === "explore") {
         isOpen={showUploadModal}
         onClose={() => setShowUploadModal(false)}
         onUpload={handleUploadSystem}
+      />
+
+      <ModelPredictionModal
+        isOpen={showModelPrediction}
+        onClose={() => {
+          setShowModelPrediction(false);
+          setPendingSystem(null);
+        }}
+        onShowInSpace={handleShowInSpace}
       />
     </div>
   );

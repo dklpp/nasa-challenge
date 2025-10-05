@@ -1,0 +1,25 @@
+[
+  {
+    "pl_name": "Wolf 3849.01",
+    "hostname": "Wolf 3849",
+    "default_flag": 1,
+    "disposition": "CONFIRMED",
+    "sy_snum": 1.0,
+    "sy_pnum": 2.0,
+    "discoverymethod": "Transit",
+    "disc_year": 2025.0,
+    "soltype": "Custom",
+    "pl_controv_flag": 0.0,
+    "pl_orbper": 1.51087,
+    "pl_orbsmax": 0.01154,
+    "pl_orbeccen": 0.006,
+    "pl_rade": 1.116,
+    "pl_eqt": 400,
+    "st_teff": 2566.0,
+    "st_rad": 0.121,
+    "st_mass": 0.089,
+    "ra": 346.6223,
+    "dec": -5.0413,
+    "sy_dist": 12.43
+  }
+]
