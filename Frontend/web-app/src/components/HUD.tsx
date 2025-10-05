@@ -53,7 +53,7 @@ export function HUD({
           ← Back to main view
         </button>
       )}
-      <button id="resetCam" className="whitespace-nowrap" onClick={onReset}>
+      <button id="resetCam" className="whitespace-nowrap" onClick={onBackToMain}>
         Reset view
       </button>
     </div>

@@ -414,6 +414,55 @@ export default function Home() {
       return texture;
     }
     const starField = new THREE.Group();
+    // Build a visible orbit mesh (tube) from a set of points
+    function makeOrbitMesh(points: THREE.Vector3[], colorHex: number, thickness: number) {
+      const curve = new THREE.CatmullRomCurve3(points, true);
+      const geom  = new THREE.TubeGeometry(curve, Math.max(128, points.length), thickness, 8, true);
+      const mat   = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity: 0.7,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(geom, mat);
+      // Do not block pointer picking of stars/planets
+      (mesh as any).raycast = () => {};
+      return mesh;
+    }
+
+    // Thin orbit line identical to Earth's orbit style
+    function makeOrbitLine(points: THREE.Vector3[], colorHex: number, opacity = 0.85) {
+      const geom = new THREE.BufferGeometry().setFromPoints(points);
+      const mat = new THREE.LineBasicMaterial({
+        color: colorHex,
+        transparent: true,
+        opacity,
+        linewidth: 1,
+      });
+      const line = new THREE.LineLoop(geom, mat);
+      (line as any).raycast = () => {};
+      return line;
+    }
+    // Enforce minimum spacing between semi-major axes so planets don't overlap visually
+function computeOrbitScales(
+  baseAU: number[],          // raw aU per planet (scene units)
+  radii: number[],           // planet mesh radii (scene units)
+  starRadius: number,        // star mesh radius (scene units)
+  gap = 16,                  // min spacing between adjacent orbits
+  firstOffset = 10           // min clearance from star surface to the first orbit
+) {
+  const items = baseAU.map((a, i) => ({ i, a, r: radii[i] || 0 })).sort((x, y) => x.a - y.a);
+  const scales = baseAU.map(() => 1);
+  let prev = Math.max(starRadius + firstOffset, starRadius * 1.15);
+  for (const it of items) {
+    const minForThis = Math.max(prev + gap + it.r * 1.6, starRadius + firstOffset);
+    const target = Math.max(it.a, minForThis);
+    scales[it.i] = target / Math.max(1e-6, it.a);
+    prev = target;
+  }
+  return scales;
+}
     function makeStars(
       N: number,
       R: number,
@@ -517,6 +566,34 @@ export default function Home() {
     };
     const clock = new THREE.Clock();
 
+    // Smoothly animate camera position & target
+function smoothCamTo(camPos: THREE.Vector3, targetPos: THREE.Vector3, duration = 1.2) {
+  const startPos = camera.position.clone();
+  const startTarget = new THREE.Vector3(controls.target.x, controls.target.y, controls.target.z);
+  let progress = 0;
+
+  if ((current as any).zoomAnimation) {
+    cancelAnimationFrame((current as any).zoomAnimation);
+    (current as any).zoomAnimation = null;
+  }
+
+  const animate = () => {
+    const dtLocal = clock.getDelta();
+    progress = Math.min(1, progress + dtLocal / duration);
+    const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+    camera.position.lerpVectors(startPos, camPos, eased);
+    const newTarget = new THREE.Vector3().lerpVectors(startTarget, targetPos, eased);
+    controls.target.copy(newTarget);
+    controls.update();
+
+    if (progress < 1) (current as any).zoomAnimation = requestAnimationFrame(animate);
+    else (current as any).zoomAnimation = null;
+  };
+
+  (current as any).zoomAnimation = requestAnimationFrame(animate);
+}
+
     function onResize() {
       if (!centerRef.current) return;
       const w = centerRef.current.clientWidth,
@@ -550,9 +627,9 @@ export default function Home() {
       scene.add(g);
       current.group = g;
       // Reset camera to a good vantage point on each system build
-      controls.target.set(0, 0, 0);
-      camera.position.set(0, 120, 260);
-      controls.update();
+      // controls.target.set(0, 0, 0);
+      // camera.position.set(0, 120, 260);
+      // controls.update();
 
       const starCol = teffColor(sys.star.teff, THREE);
       // Scale star size based on stellar radius in solar radii (st_rad) from K2 dataset
@@ -609,36 +686,36 @@ export default function Home() {
       g.add(lamp);
 
       let maxAU = 0;
+      // --- Precompute orbit scales to guarantee visual spacing (moved outside loop) ---
+      const baseAU_list: number[] = [];
+      const radii_list: number[] = [];
       sys.planets.forEach((p0) => {
+        const p = { ...p0 } as Planet;
+        const aU0 = scaleAU(Math.max(0.004, p.a_au), logScale);
+        const rScene = exSizes
+          ? Math.max(1.8, p.radius_rj ? p.radius_rj * 6 : (p.radius_re || 0) * 0.8)
+          : Math.max(0.4, p.radius_rj ? p.radius_rj * 1.2 : (p.radius_re || 0) * 0.2);
+        baseAU_list.push(aU0);
+        radii_list.push(rScene);
+      });
+      const orbitScales_sys = computeOrbitScales(
+        baseAU_list,
+        radii_list,
+        starSize,
+        Math.max(16, Math.floor(starSize * 0.5)),  // gap
+        Math.max(10, Math.floor(starSize * 0.6))   // clearance from star
+      );
+      sys.planets.forEach((p0, idx) => {
         const p = { ...p0 } as Planet;
         const a = Math.max(0.004, p.a_au);
         const e = Math.min(0.95, Math.max(0, p.e || 0));
-        const aU = scaleAU(a, logScale);
+        const aU0 = scaleAU(a, logScale);
+        const mult = orbitScales_sys[idx] ?? 1;
+        const aU = aU0 * mult;
         const bU = aU * Math.sqrt(1 - e * e);
         const cU = Math.sqrt(Math.max(0, aU * aU - bU * bU));
         const inc = THREE.MathUtils.degToRad(p.incl || 0);
         maxAU = Math.max(maxAU, aU * (1 + e));
-
-        const N = 256;
-        const pts: any[] = [];
-        for (let i = 0; i <= N; i++) {
-          const th = (i / N) * 2 * Math.PI;
-          const x = aU * Math.cos(th) - cU;
-          const y = bU * Math.sin(th);
-          pts.push(new THREE.Vector3(x, 0, y));
-        }
-        const orbGeom = new THREE.BufferGeometry().setFromPoints(pts);
-        const orbMat = new THREE.LineBasicMaterial({
-          color: 0x5588dd, 
-          transparent: true,
-          opacity: 0.85, 
-          linewidth: 2, 
-        });
-        const orbit = new THREE.LineLoop(orbGeom, orbMat);
-        // Keep orbit geometry in XZ plane and tilt around X by inclination to match planet motion
-        orbit.rotation.set(inc, 0, 0);
-        g.add(orbit);
-        current.orbits.push(orbit);
 
         const rScene = exSizes
           ? Math.max(
@@ -667,6 +744,7 @@ export default function Home() {
           bU,
           cU,
           inc,
+          orbitScale: mult,
           M: 0, // Start all planets at periastron (closest approach) for consistency
           name: `${sys.name} ${p.name}`,
         };
@@ -680,6 +758,24 @@ export default function Home() {
           .applyAxisAngle(new THREE.Vector3(1, 0, 0), inc);
         g.add(m);
         current.planets.push(m);
+
+        // Build orbit AFTER planet so it matches the exact scaled params used by the planet
+        {
+          const N = 128;
+          const pts: THREE.Vector3[] = [];
+          for (let i = 0; i <= N; i++) {
+            const th = (i / N) * 2 * Math.PI;
+            const x = aU * Math.cos(th) - cU;
+            const y = bU * Math.sin(th);
+            pts.push(new THREE.Vector3(x, 0, y));
+          }
+          const orbit = makeOrbitLine(pts, 0x5588dd, 0.85);
+          orbit.rotation.set(inc, 0, 0);
+          orbit.position.y = 0.001;
+          (orbit as any).userData.planet = m;
+          g.add(orbit);
+          current.orbits.push(orbit);
+        }
       });
 
       setActive(sys.name);
@@ -688,9 +784,11 @@ export default function Home() {
       );
       // Frame the system based on its size
       const dist = Math.min(1500, Math.max(120, 90 + maxAU * 0.6));
-      camera.position.set(0, Math.min(400, 40 + maxAU * 0.25), dist);
-      controls.target.set(0, 0, 0);
-      controls.update();
+smoothCamTo(
+  new THREE.Vector3(0, Math.min(400, 40 + maxAU * 0.25), dist),
+  new THREE.Vector3(0, 0, 0),
+  1.2
+);
     }
 
     function buildEarthCentered(systems: Sys[]) {
@@ -997,40 +1095,39 @@ export default function Home() {
           customLight.position.set(0, 0, 0);
           sg.add(customLight);
         }
-
+        // Precompute spacing per system (far view)
+const baseAU_list_ec: number[] = [];
+const radii_list_ec: number[] = [];
+const localScale = 50;
+sys.planets.forEach((p0) => {
+  const p = { ...p0 } as Planet;
+  const aU0 = Math.max(0.004, p.a_au) * localScale;
+  const rSceneTmp = exSizes
+    ? Math.max(2.5, p.radius_rj ? p.radius_rj * 8 : (p.radius_re || 0) * 1.5)
+    : Math.max(1.0, p.radius_rj ? p.radius_rj * 2.5 : (p.radius_re || 0) * 0.5);
+  baseAU_list_ec.push(aU0);
+  radii_list_ec.push(rSceneTmp);
+});
+const orbitScales_ec = computeOrbitScales(
+  baseAU_list_ec,
+  radii_list_ec,
+  starSize,
+  Math.max(20, Math.floor(starSize * 0.8)), // wider gap in far view
+  Math.max(12, Math.floor(starSize * 0.7))
+);
         // Add planets with orbits (scaled for visibility from far away)
-        sys.planets.forEach((p0) => {
+        sys.planets.forEach((p0, idx) => {
           const p = { ...p0 } as Planet;
           const a = Math.max(0.004, p.a_au);
           const e = Math.min(0.95, Math.max(0, p.e || 0));
           // Much larger scale so orbits are clearly visible from the general view
-          const localScale = 50; 
-          const aU = a * localScale;
+          const localScale = 50;
+const aU0 = a * localScale;
+const mult = orbitScales_ec[idx] ?? 1;
+const aU = aU0 * mult;
           const bU = aU * Math.sqrt(1 - e * e);
           const cU = Math.sqrt(Math.max(0, aU * aU - bU * bU));
           const inc = THREE.MathUtils.degToRad(p.incl || 0);
-
-          // Orbit path - more segments for smoother circles
-          const N = 64;
-          const pts: any[] = [];
-          for (let j = 0; j <= N; j++) {
-            const th = (j / N) * 2 * Math.PI;
-            const ox = aU * Math.cos(th) - cU;
-            const oy = bU * Math.sin(th);
-            pts.push(new THREE.Vector3(ox, 0, oy));
-          }
-          const orbGeom = new THREE.BufferGeometry().setFromPoints(pts);
-          const orbMat = new THREE.LineBasicMaterial({
-            color: isCustomSystem ? 0x00ffaa : 0x88bbff, // Brighter colors for visibility
-            transparent: true,
-            opacity: 1.0, // Full opacity for maximum visibility
-            linewidth: 3, // Even thicker lines
-            blending: THREE.AdditiveBlending, // Additive blending makes orbits glow
-          });
-          const orbit = new THREE.LineLoop(orbGeom, orbMat);
-          orbit.rotation.set(inc, 0, 0);
-          sg.add(orbit);
-          current.orbits.push(orbit as any);
 
           // Planet mesh - larger for visibility with bigger orbits
           const rScene = exSizes
@@ -1060,11 +1157,13 @@ export default function Home() {
             bU,
             cU,
             inc,
+            orbitScale: mult,
             M: 0, // Start all planets at periastron (closest approach) for consistency
             name: `${sys.name} ${p.name}`,
             systemRA: sys.ra,
             systemDec: sys.dec,
             systemDistance: distance,
+            localScale: 50,
           };
           const v0 = trueAnomaly((m as any).userData.M, e);
           const r0 = (aU * (1 - e * e)) / (1 + e * Math.cos(v0));
@@ -1075,6 +1174,24 @@ export default function Home() {
             .applyAxisAngle(new THREE.Vector3(1, 0, 0), inc);
           sg.add(m);
           current.planets.push(m as any);
+
+          // Build orbit AFTER planet so it matches exactly
+          {
+            const N = 128;
+            const pts: THREE.Vector3[] = [];
+            for (let j = 0; j <= N; j++) {
+              const th = (j / N) * 2 * Math.PI;
+              const ox = aU * Math.cos(th) - cU;
+              const oy = bU * Math.sin(th);
+              pts.push(new THREE.Vector3(ox, 0, oy));
+            }
+            const orbit = makeOrbitLine(pts, 0x5588dd, 0.85);
+            orbit.rotation.set(inc, 0, 0);
+            orbit.position.y = 0.001;
+            (orbit as any).userData.planet = m;
+            sg.add(orbit);
+            current.orbits.push(orbit as any);
+          }
         });
       });
 
@@ -1084,10 +1201,8 @@ export default function Home() {
       );
 
       // Position camera for a wider overview showing orbits around distant stars
-      controls.target.set(0, 0, 0); // Target the Sun at center
-      camera.position.set(200, 250, 500); // Pull back for wider view
       controls.maxDistance = 15000;
-      controls.update();
+smoothCamTo(new THREE.Vector3(200, 250, 500), new THREE.Vector3(0, 0, 0), 1.2);
     }
 
     function selectPlanet(m: any) {
@@ -1537,30 +1652,27 @@ export default function Home() {
       }
 
       for (const m of current.planets) {
-        const p: any = (m as any).userData;
-        const e = Math.min(0.95, Math.max(0, p.e || 0));
-        // Slowdown factor for reasonable orbital motion
-        const orbitalSlowdown = 20; // Adjust for slower, more realistic motion
-        p.M +=
-          (timeFactor * dt * (2 * Math.PI)) / (p.period_days * orbitalSlowdown); // mean anomaly advance
-        const v = trueAnomaly(p.M, e);
-        const a = (p.aU = scaleAU(p.a_au, logScale));
-        const b = (p.bU = a * Math.sqrt(1 - e * e));
-        const c = (p.cU = Math.sqrt(Math.max(0, a * a - b * b)));
-        const r = (a * (1 - e * e)) / (1 + e * Math.cos(v));
-        const x = r * Math.cos(v);
-        const y = r * Math.sin(v);
-        m.position
-          .set(x, 0, y)
-          .applyAxisAngle(
-            new THREE.Vector3(0, 1, 0),
-            THREE.MathUtils.degToRad(0)
-          )
-          .applyAxisAngle(
-            new THREE.Vector3(1, 0, 0),
-            THREE.MathUtils.degToRad((p.incl as number) || 0)
-          );
-      }
+  const p: any = (m as any).userData;
+  const e = Math.min(0.95, Math.max(0, p.e || 0));
+  const orbitalSlowdown = 20;
+  p.M += (speedRef.current * dt * (2 * Math.PI)) / (p.period_days * orbitalSlowdown);
+  const v = trueAnomaly(p.M, e);
+
+  // SAME scaling as build-time (earth view tags localScale)
+  // SAME scaling as build-time + orbit spacing multiplier
+const baseA = p.localScale ? p.a_au * p.localScale : scaleAU(p.a_au, logScale);
+const a = (p.aU = baseA * (p.orbitScale ?? 1));
+const b = (p.bU = a * Math.sqrt(1 - e * e));
+const c = (p.cU = Math.sqrt(Math.max(0, a * a - b * b)));
+
+  const r = (a * (1 - e * e)) / (1 + e * Math.cos(v));
+  const x = r * Math.cos(v);
+  const y = r * Math.sin(v);
+
+  m.position
+    .set(x, 0, y)
+    .applyAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad((p.incl as number) || 0));
+}
       renderer.render(scene, camera);
     }
 
@@ -1684,6 +1796,7 @@ export default function Home() {
       buildExplore: buildEarthCentered, // Alias for explore mode
       selectPlanet,
       selectStar,
+      smoothCamTo, 
     } as any;
 
     tick();
@@ -1769,24 +1882,18 @@ export default function Home() {
 
   function resetCam() {
     const s = sceneRef.current;
-    if (!s) return;
+if (!s) return;
 
-    if (mode === "explore") {
-      s.camera.position.set(0, 600, 1200);
-      s.controls.target.set(0, 0, 0);
-      s.controls.maxDistance = 2500;
-      s.controls.update();
-    } else if (mode === "earth") {
-      const earthDistance = 150; // Same as in buildEarthCentered
-      s.camera.position.set(earthDistance, 100, 300);
-      s.controls.target.set(earthDistance, 0, 0); // Target Earth
-      s.controls.maxDistance = 15000;
-      s.controls.update();
-    } else {
-      s.camera.position.set(0, 120, 260);
-      s.controls.target.set(0, 0, 0);
-      s.controls.update();
-    }
+if (mode === "explore") {
+  s.smoothCamTo(new THREE.Vector3(0, 600, 1200), new THREE.Vector3(0, 0, 0), 1.0);
+  s.controls.maxDistance = 2500;
+} else if (mode === "earth") {
+  const earthDistance = 150;
+  s.smoothCamTo(new THREE.Vector3(earthDistance, 100, 300), new THREE.Vector3(earthDistance, 0, 0), 1.0);
+  s.controls.maxDistance = 15000;
+} else {
+  s.smoothCamTo(new THREE.Vector3(0, 120, 260), new THREE.Vector3(0, 0, 0), 1.0);
+}
   }
 
   function backToMainView() {
