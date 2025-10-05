@@ -10,14 +10,52 @@ export type Planet = {
 };
 
 export type System = {
-  name: string; // host star / system name
+  name: string; 
   star: {
-    teff: number; // stellar effective temperature (K)
-    radius_rs?: number; // stellar radius in solar radii (R☉) from st_rad in K2 dataset
-    mass_ms?: number; // stellar mass (M_sun)
+    teff: number; 
+    radius_rs?: number;
+    mass_ms?: number;
   };
   planets: Planet[];
   ra?: number; // Right Ascension in degrees
   dec?: number; // Declination in degrees
   distance_pc?: number; // Distance in parsecs (if available)
+};
+
+export type ExoplanetRecord = {
+  pl_name: string; // Planet name
+  hostname: string; // Host star name
+  default_flag?: number;
+  disposition?: string; // e.g., "CONFIRMED"
+  disp_refname?: string;
+  sy_snum?: number; // Number of stars in system
+  sy_pnum?: number; // Number of planets in system
+  discoverymethod?: string;
+  disc_year?: number;
+  disc_facility?: string;
+  soltype?: string;
+  pl_controv_flag?: number;
+  pl_refname?: string;
+  pl_orbper?: number; // Orbital period in days
+  pl_orbpererr1?: number;
+  pl_orbpererr2?: number;
+  pl_orbsmax?: number; // Semi-major axis in AU
+  pl_rade?: number; // Planet radius in Earth radii
+  pl_bmasse?: number; // Planet mass in Earth masses
+  pl_orbeccen?: number; // Orbital eccentricity
+  pl_insol?: number; // Insolation flux
+  pl_eqt?: number; // Equilibrium temperature in K
+  st_teff?: number; // Stellar effective temperature in K
+  st_rad?: number; // Stellar radius in solar radii
+  st_mass?: number; // Stellar mass in solar masses
+  st_met?: number; // Stellar metallicity
+  ra?: number; // Right Ascension in degrees
+  dec?: number; // Declination in degrees
+  sy_dist?: number; // Distance in parsecs
+  sy_vmag?: number; // V magnitude
+  sy_kmag?: number; // K magnitude
+  sy_gaiamag?: number; // Gaia magnitude
+  rowupdate?: string;
+  pl_pubdate?: string;
+  releasedate?: string;
 };

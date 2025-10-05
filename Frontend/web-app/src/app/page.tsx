@@ -53,12 +53,10 @@ export default function Home() {
   const speedRef = useRef(speed);
   const dataRef = useRef<SystemT[]>([]);
 
-  // Sync speed state with ref so animation loop can access current value
   useEffect(() => {
     speedRef.current = speed;
   }, [speed]);
 
-  // Sync data state with ref so selectStar can access current data
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
@@ -80,7 +78,6 @@ export default function Home() {
     );
   }, [q, data]);
 
-  // Fetch systems on mount
   useEffect(() => {
     (async () => {
       try {
@@ -97,7 +94,6 @@ export default function Home() {
     })();
   }, []);
 
-  // When layout width changes (e.g., toggling details panel), update renderer size
   useEffect(() => {
     const s = sceneRef.current;
     if (!s || !centerRef.current) return;
@@ -107,8 +103,6 @@ export default function Home() {
     s.camera.aspect = w / h;
     s.camera.updateProjectionMatrix();
   }, [showDetails]);
-
-  // Initialize Three scene once
   useEffect(() => {
     if (!centerRef.current) return;
 
@@ -116,7 +110,6 @@ export default function Home() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     centerRef.current.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
-    // Set darker space background
     scene.background = new THREE.Color(0x000508);
     const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 5000);
     camera.position.set(0, 120, 260);
@@ -126,10 +119,8 @@ export default function Home() {
     controls.minDistance = 30;
     controls.maxDistance = 1500;
 
-    // Track previous control state to detect user interaction
     let previousControlTarget = { x: controls.target.x, y: controls.target.y, z: controls.target.z };
     let userInteractionDetector = setInterval(() => {
-      // If controls target changed significantly and it wasn't from our animation, cancel animation
       const dx = Math.abs(controls.target.x - previousControlTarget.x);
       const dy = Math.abs(controls.target.y - previousControlTarget.y);
       const dz = Math.abs(controls.target.z - previousControlTarget.z);
@@ -143,7 +134,6 @@ export default function Home() {
       }
     }, 100);
 
-    // Keyboard controls for camera movement
     const keys = {
       w: false,
       a: false,
@@ -166,17 +156,13 @@ export default function Home() {
       if (e.key === "Shift") {
         keys.shift = true;
       }
-      // Press Escape to unlock camera and reset target to center
       if (e.key === "Escape") {
-        // Cancel any ongoing zoom animation
         if ((current as any).zoomAnimation) {
           cancelAnimationFrame((current as any).zoomAnimation);
           (current as any).zoomAnimation = null;
         }
-        // Reset controls target to center
         controls.target.set(0, 0, 0);
         controls.update();
-        // Close details panel if open
         setShowDetails(false);
         showToast("Camera unlocked - free to move", 1200);
       }
@@ -196,14 +182,11 @@ export default function Home() {
     window.addEventListener("keyup", onKeyUp);
 
     scene.add(new THREE.AmbientLight(0x506080, 0.8));
-    // Global light to avoid creating hundreds of per-star lights
     const globalLight = new THREE.DirectionalLight(0xffffff, 1.2);
     globalLight.position.set(300, 450, 350);
     globalLight.target.position.set(0, 0, 0);
     scene.add(globalLight);
     scene.add(globalLight.target);
-    // Layered starry background for richer depth
-    // Use a tiny circular sprite so stars render as round points (not squares)
     let discTex: any = null;
     function getDiscTexture() {
       if (discTex) return discTex;
@@ -223,26 +206,20 @@ export default function Home() {
       return discTex;
     }
 
-    // Create a procedural planet texture with horizontal gradient bands
     function createPlanetTexture(baseColor: any) {
       const canvas = document.createElement("canvas");
       canvas.width = 1024;
       canvas.height = 512;
       const ctx = canvas.getContext("2d")!;
 
-      // Create base gradient from top to bottom
       const gradient = ctx.createLinearGradient(0, 0, 0, 512);
 
-      // Generate variations of the base color for gradient bands
       const h = { h: 0, s: 0, l: 0 };
       baseColor.getHSL(h);
-
-      // Create swirling horizontal bands with color variations
       const numBands = 20;
       for (let i = 0; i < numBands; i++) {
         const t = i / numBands;
 
-        // Vary lightness and saturation for each band
         const lightnessVar = 0.1 + Math.sin(t * Math.PI * 4) * 0.15;
         const saturationVar = Math.cos(t * Math.PI * 3) * 0.1;
 
@@ -263,10 +240,7 @@ export default function Home() {
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, 1024, 512);
 
-      // Add horizontal swirling cloud/storm patterns
       ctx.globalCompositeOperation = "overlay";
-
-      // Create multiple wavy bands
       for (let band = 0; band < 12; band++) {
         const yBase = (band / 12) * 512;
         const amplitude = 20 + Math.random() * 30;
@@ -285,7 +259,6 @@ export default function Home() {
         ctx.lineTo(0, yBase + 60);
         ctx.closePath();
 
-        // Lighter swirling bands
         const bandColor = new THREE.Color().setHSL(
           h.h + Math.random() * 0.1 - 0.05,
           h.s * 0.6,

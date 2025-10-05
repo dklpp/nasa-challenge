@@ -1,31 +1,37 @@
 {
-  "name": "K2-18",
-  "star": {
-    "teff": 3503,
-    "radius_rs": 0.411,
-    "mass_ms": 0.359
-  },
-  "planets": [
-    {
-      "name": "b",
-      "a_au": 0.1429,
-      "period_days": 32.9396,
-      "e": 0.0,
-      "radius_re": 2.61,
-      "incl": 89.56,
-      "pl_eqt": 255
-    },
-    {
-      "name": "c",
-      "a_au": 0.0884,
-      "period_days": 16.4,
-      "e": 0.0,
-      "radius_re": 1.92,
-      "incl": 89.67,
-      "pl_eqt": 320
-    }
-  ],
-  "ra": 173.5649,
-  "dec": 7.5878,
-  "distance_pc": 38.49
+  "pl_name": "Wolf 503 b",
+  "hostname": "Wolf 503",
+  "default_flag": 1,
+  "disposition": "CONFIRMED",
+  "disp_refname": "Peterson et al. 2018",
+  "sy_snum": 1.0,
+  "sy_pnum": 1.0,
+  "discoverymethod": "Transit",
+  "disc_year": 2018.0,
+  "disc_facility": "K2",
+  "soltype": "Published Confirmed",
+  "pl_controv_flag": 0.0,
+  "pl_refname": "<a refstr=BONOMO_ET_AL__2023 href=https://ui.adsabs.harvard.edu/abs/2023arXiv230405773B/abstract target=ref>Bonomo et al. 2023</a>",
+  "pl_orbper": 6.00127,
+  "pl_orbpererr1": 0.000021,
+  "pl_orbpererr2": -0.000021,
+  "pl_orbsmax": 0.05712,
+  "pl_rade": 2.043,
+  "pl_bmasse": 6.27,
+  "pl_orbeccen": 0.409,
+  "pl_insol": 64.7,
+  "pl_eqt": 789.0,
+  "st_teff": 4716.0,
+  "st_rad": 0.689,
+  "st_mass": 0.688,
+  "st_met": -0.47,
+  "ra": 206.8461979,
+  "dec": -6.1393369,
+  "sy_dist": 44.526,
+  "sy_vmag": 10.27,
+  "sy_kmag": 7.617,
+  "sy_gaiamag": 9.89816,
+  "rowupdate": "2023-04-17",
+  "pl_pubdate": "2023-04",
+  "releasedate": "2023-04-17"
 }

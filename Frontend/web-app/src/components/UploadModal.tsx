@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import type { System } from "../app/data";
+import type { System, ExoplanetRecord } from "../app/data";
 
 export default function UploadModal({
   isOpen,
@@ -14,85 +14,77 @@ export default function UploadModal({
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<System | null>(null);
+  const [originalRecords, setOriginalRecords] = useState<ExoplanetRecord[]>([]);
   const [error, setError] = useState<string>("");
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
-  const validateSystem = (
+  const validateExoplanetData = (
     data: any
-  ): { valid: boolean; error?: string; system?: System } => {
-    if (!data.name || typeof data.name !== "string") {
-      return { valid: false, error: "Missing or invalid 'name' field" };
+  ): { valid: boolean; error?: string; system?: System; records?: ExoplanetRecord[] } => {
+    if (!Array.isArray(data)) {
+      return { valid: false, error: "Data must be an array of exoplanet records" };
     }
 
-    if (!data.star || typeof data.star !== "object") {
-      return { valid: false, error: "Missing or invalid 'star' object" };
+    if (data.length === 0) {
+      return { valid: false, error: "Array must contain at least one exoplanet record" };
     }
 
-    if (typeof data.star.teff !== "number") {
-      return {
-        valid: false,
-        error: "Missing or invalid 'star.teff' (stellar temperature)",
-      };
-    }
-
-    if (!Array.isArray(data.planets)) {
-      return { valid: false, error: "Missing or invalid 'planets' array" };
-    }
-
-    if (data.planets.length === 0) {
-      return { valid: false, error: "System must have at least one planet" };
-    }
-
-    // Validate each planet
-    for (let i = 0; i < data.planets.length; i++) {
-      const planet = data.planets[i];
-      if (!planet.name || typeof planet.name !== "string") {
+    const systemMap = new Map<string, ExoplanetRecord[]>();
+    
+    for (let i = 0; i < data.length; i++) {
+      const record = data[i];
+      
+      if (!record.pl_name || typeof record.pl_name !== "string") {
         return {
           valid: false,
-          error: `Planet ${i + 1}: Missing or invalid 'name'`,
+          error: `Record ${i + 1}: Missing or invalid 'pl_name' field`,
         };
       }
-      if (typeof planet.a_au !== "number" || planet.a_au <= 0) {
+      
+      if (!record.hostname || typeof record.hostname !== "string") {
         return {
           valid: false,
-          error: `Planet ${i + 1}: Missing or invalid 'a_au' (semi-major axis)`,
+          error: `Record ${i + 1}: Missing or invalid 'hostname' field`,
         };
       }
-      if (typeof planet.period_days !== "number" || planet.period_days <= 0) {
-        return {
-          valid: false,
-          error: `Planet ${i + 1}: Missing or invalid 'period_days'`,
-        };
+
+      const hostname = record.hostname;
+      if (!systemMap.has(hostname)) {
+        systemMap.set(hostname, []);
       }
+      systemMap.get(hostname)!.push(record);
     }
 
-    // Build a valid System object
+    // For now, take the first system found
+    const [systemName, records] = Array.from(systemMap.entries())[0];
+    const firstRecord = records[0];
+
+    // Build a System object from the exoplanet records
     const system: System = {
-      name: data.name,
+      name: systemName,
       star: {
-        teff: data.star.teff,
-        radius_rs: data.star.radius_rs,
-        mass_ms: data.star.mass_ms,
+        teff: firstRecord.st_teff || 5778, // Default to Sun-like if missing
+        radius_rs: firstRecord.st_rad,
+        mass_ms: firstRecord.st_mass,
       },
-      planets: data.planets.map((p: any) => ({
-        name: p.name,
-        a_au: p.a_au,
-        period_days: p.period_days,
-        e: p.e,
-        radius_re: p.radius_re,
-        radius_rj: p.radius_rj,
-        incl: p.incl,
-        pl_eqt: p.pl_eqt,
+      planets: records.map((record) => ({
+        name: record.pl_name.replace(record.hostname, '').trim(), // Remove host name to get planet designation
+        a_au: record.pl_orbsmax || 1.0, // Default to 1 AU if missing
+        period_days: record.pl_orbper || 365.25, // Default to 1 year if missing
+        e: record.pl_orbeccen,
+        radius_re: record.pl_rade,
+        incl: undefined, // Not directly available in this format
+        pl_eqt: record.pl_eqt,
       })),
-      ra: data.ra,
-      dec: data.dec,
-      distance_pc: data.distance_pc,
+      ra: firstRecord.ra,
+      dec: firstRecord.dec,
+      distance_pc: firstRecord.sy_dist,
     };
 
-    return { valid: true, system };
+    return { valid: true, system, records: data };
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -106,18 +98,20 @@ export default function UploadModal({
     setFile(selectedFile);
     setError("");
     setPreviewData(null);
+    setOriginalRecords([]);
 
     try {
       const text = await selectedFile.text();
       const json = JSON.parse(text);
 
-      const result = validateSystem(json);
+      const result = validateExoplanetData(json);
       if (!result.valid) {
         setError(result.error || "Invalid data format");
         return;
       }
 
       setPreviewData(result.system!);
+      setOriginalRecords(result.records || []);
     } catch (err: any) {
       setError(`Failed to parse JSON: ${err.message}`);
     }
@@ -153,6 +147,7 @@ export default function UploadModal({
   const handleClose = () => {
     setFile(null);
     setPreviewData(null);
+    setOriginalRecords([]);
     setError("");
     setDragActive(false);
     onClose();
@@ -186,7 +181,7 @@ export default function UploadModal({
             />
             <div className="upload-icon">📁</div>
             <p>Click to upload or drag & drop</p>
-            <p className="upload-hint">JSON file with star and planet data</p>
+            <p className="upload-hint">JSON file with NASA Exoplanet Archive format</p>
           </div>
 
           {file && (
@@ -202,7 +197,7 @@ export default function UploadModal({
             </div>
           )}
 
-          {previewData && (
+          {previewData && originalRecords.length > 0 && (
             <div className="preview-section">
               <h3>Preview</h3>
               <div className="preview-content">
@@ -234,25 +229,43 @@ export default function UploadModal({
                     </span>
                   </div>
                 )}
+                {previewData.distance_pc && (
+                  <div className="preview-row">
+                    <span className="preview-label">Distance:</span>
+                    <span className="preview-value">
+                      {previewData.distance_pc.toFixed(2)} pc
+                    </span>
+                  </div>
+                )}
                 <div className="preview-row">
-                  <span className="preview-label">Number of Planets:</span>
+                  <span className="preview-label">Records Loaded:</span>
                   <span className="preview-value">
-                    {previewData.planets.length}
+                    {originalRecords.length}
                   </span>
                 </div>
 
                 <div className="planets-list">
                   <h4>Planets:</h4>
-                  {previewData.planets.map((planet, idx) => (
+                  {originalRecords.map((record, idx) => (
                     <div key={idx} className="planet-item">
-                      <strong>{planet.name}</strong>
-                      <span>a = {planet.a_au.toFixed(3)} AU</span>
-                      <span>P = {planet.period_days.toFixed(2)} days</span>
-                      {planet.radius_rj && (
-                        <span>R = {planet.radius_rj.toFixed(2)} Rj</span>
+                      <strong>{record.pl_name}</strong>
+                      {record.pl_orbsmax && (
+                        <span>a = {record.pl_orbsmax.toFixed(3)} AU</span>
                       )}
-                      {planet.radius_re && (
-                        <span>R = {planet.radius_re.toFixed(2)} R⊕</span>
+                      {record.pl_orbper && (
+                        <span>P = {record.pl_orbper.toFixed(2)} days</span>
+                      )}
+                      {record.pl_rade && (
+                        <span>R = {record.pl_rade.toFixed(2)} R⊕</span>
+                      )}
+                      {record.pl_eqt && (
+                        <span>T = {record.pl_eqt.toFixed(0)} K</span>
+                      )}
+                      {record.disposition && (
+                        <span className="disposition">{record.disposition}</span>
+                      )}
+                      {record.discoverymethod && (
+                        <span className="method">{record.discoverymethod}</span>
                       )}
                     </div>
                   ))}
@@ -263,38 +276,44 @@ export default function UploadModal({
 
           <div className="example-format">
             <details>
-              <summary>Example JSON format</summary>
+              <summary>Example JSON format (NASA Exoplanet Archive)</summary>
               <pre>{`{
-  "name": "TRAPPIST-1",
-  "star": {
-    "teff": 2566,
-    "radius_rs": 0.121,
-    "mass_ms": 0.089
-  },
-  "planets": [
-    {
-      "name": "b",
-      "a_au": 0.01154,
-      "period_days": 1.51087,
-      "e": 0.006,
-      "radius_re": 1.116,
-      "incl": 89.56,
-      "pl_eqt": 400
-    },
-    {
-      "name": "c",
-      "a_au": 0.01580,
-      "period_days": 2.42182,
-      "e": 0.007,
-      "radius_re": 1.097,
-      "incl": 89.67,
-      "pl_eqt": 342
-    }
-  ],
-  "ra": 346.6223,
-  "dec": -5.0413,
-  "distance_pc": 12.43
-}`}</pre>
+    "pl_name": "Wolf 503 b",
+    "hostname": "Wolf 503",
+    "default_flag": 1,
+    "disposition": "CONFIRMED",
+    "disp_refname": "Peterson et al. 2018",
+    "sy_snum": 1.0,
+    "sy_pnum": 1.0,
+    "discoverymethod": "Transit",
+    "disc_year": 2018.0,
+    "disc_facility": "K2",
+    "soltype": "Published Confirmed",
+    "pl_controv_flag": 0.0,
+    "pl_refname": "<a refstr=BONOMO_ET_AL__2023 href=https://ui.adsabs.harvard.edu/abs/2023arXiv230405773B/abstract target=ref>Bonomo et al. 2023</a>",
+    "pl_orbper": 6.00127,
+    "pl_orbpererr1": 0.000021,
+    "pl_orbpererr2": -0.000021,
+    "pl_orbsmax": 0.05712,
+    "pl_rade": 2.043,
+    "pl_bmasse": 6.27,
+    "pl_orbeccen": 0.409,
+    "pl_insol": 64.7,
+    "pl_eqt": 789.0,
+    "st_teff": 4716.0,
+    "st_rad": 0.689,
+    "st_mass": 0.688,
+    "st_met": -0.47,
+    "ra": 206.8461979,
+    "dec": -6.1393369,
+    "sy_dist": 44.526,
+    "sy_vmag": 10.27,
+    "sy_kmag": 7.617,
+    "sy_gaiamag": 9.89816,
+    "rowupdate": "2023-04-17",
+    "pl_pubdate": "2023-04",
+    "releasedate": "2023-04-17"
+  }`}</pre>
             </details>
           </div>
         </div>
