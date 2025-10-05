@@ -58,25 +58,25 @@ export default function UploadModal({
       systemMap.get(hostname)!.push(record);
     }
 
-    // For now, take the first system found
+
     const [systemName, records] = Array.from(systemMap.entries())[0];
     const firstRecord = records[0];
 
-    // Build a System object from the exoplanet records
+
     const system: System = {
       name: systemName,
       star: {
-        teff: firstRecord.st_teff || 5778, // Default to Sun-like if missing
+        teff: firstRecord.st_teff || 5778,
         radius_rs: firstRecord.st_rad,
         mass_ms: firstRecord.st_mass,
       },
       planets: records.map((record) => ({
-        name: record.pl_name.replace(record.hostname, '').trim(), // Remove host name to get planet designation
-        a_au: record.pl_orbsmax || 1.0, // Default to 1 AU if missing
-        period_days: record.pl_orbper || 365.25, // Default to 1 year if missing
+        name: record.pl_name.replace(record.hostname, '').trim(),
+        a_au: record.pl_orbsmax || 1.0,
+        period_days: record.pl_orbper || 365.25,
         e: record.pl_orbeccen,
         radius_re: record.pl_rade,
-        incl: undefined, // Not directly available in this format
+        incl: undefined,
         pl_eqt: record.pl_eqt,
       })),
       ra: firstRecord.ra,

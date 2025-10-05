@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { parse } from "csv-parse";
 import type { System, Planet } from "../../data";
-export const runtime = "nodejs"; // ensure Node runtime for fs access
+export const runtime = "nodejs";
 
 function normKey(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -30,7 +30,7 @@ function toNum(v: any): number | undefined {
 
 export async function GET() {
   try {
-    // Resolve CSV directory: repoRoot/data/clean relative to web-app
+
     const dataDir = path.resolve(process.cwd(), "../../data/clean");
     let files: string[] = [];
     try {
@@ -39,13 +39,13 @@ export async function GET() {
         .filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".csv"))
         .map((e) => path.join(dataDir, e.name));
     } catch (e) {
-      // Directory not found; return empty
+
       return NextResponse.json([] as System[]);
     }
 
     if (!files.length) return NextResponse.json([] as System[]);
 
-    // Option: prefer files whose name includes 'filtered', otherwise all
+
     const prefer = files.filter((f) => /(filtered)/i.test(path.basename(f)));
     const targets = prefer.length ? prefer : files;
 
@@ -53,7 +53,7 @@ export async function GET() {
 
     for (const file of targets) {
       const raw = await fs.readFile(file, "utf8");
-      // Try to find the first non-empty line containing commas; handle potential BOM
+
       const text = raw.replace(/^\uFEFF/, "");
       let records: Record<string, any>[] = [];
       try {
@@ -74,7 +74,7 @@ export async function GET() {
       }
 
       for (const row of records) {
-        // Host/star name
+
         let host =
           (pick<string>(row, [
             "hostname",
@@ -88,22 +88,22 @@ export async function GET() {
 
         const fullPlName = (pick<string>(row, ["pl_name", "planetname"]) || "").toString().trim();
         if (!host && fullPlName) {
-          // Derive host from planet name by removing trailing component (e.g., "TRAPPIST-1 b" -> "TRAPPIST-1")
+
           host = fullPlName.replace(/\s+[bcdefghijklmnopqrsuvwxyz].*$/i, "").trim();
         }
-        if (!host) continue; // can't place the planet
+        if (!host) continue;
 
-        // Star properties
+
         const teff = toNum(pick(row, ["st_teff", "teff", "stteff", "stellar_teff"])) ?? 5800;
         const stRad = toNum(pick(row, ["st_rad", "st_radius", "starradius", "st_rad_rs"])) ?? undefined;
         const stMass = toNum(pick(row, ["st_mass", "st_mass_ms", "starmass"])) ?? undefined;
         
-        // Coordinate properties
+
         const ra = toNum(pick(row, ["ra", "ra_deg", "st_ra"])) ?? undefined;
         const dec = toNum(pick(row, ["dec", "dec_deg", "st_dec"])) ?? undefined;
         const distance = toNum(pick(row, ["sy_dist", "st_dist", "distance", "distance_pc"])) ?? undefined;
 
-        // Planet details
+
         let letter = (pick<string>(row, ["pl_letter", "planetletter"]) || "").toString().trim();
         if (!letter && fullPlName) {
           const m = fullPlName.match(/\s([a-z])(?!.*[a-z]).*$/i);
@@ -117,7 +117,7 @@ export async function GET() {
         const incl = toNum(pick(row, ["pl_orbincl", "incl", "inclination"])) ?? undefined;
         const pl_eqt = toNum(pick(row, ["pl_eqt", "eqt", "equilibrium_temp"])) ?? undefined;
 
-        // Require at minimum a and period to animate; otherwise skip row
+
         if (a_au === undefined || period_days === undefined) continue;
 
         const sys = systemsMap.get(host) ?? {
@@ -128,7 +128,7 @@ export async function GET() {
           dec,
           distance_pc: distance,
         };
-        // Keep the hottest available teff to avoid overwriting valid values with undefined
+
         if (!systemsMap.has(host)) {
           systemsMap.set(host, sys);
         } else {

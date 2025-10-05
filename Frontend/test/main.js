@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { systems } from './data.js';
 import { teffColor, scaleAU, trueAnomaly, reportTests } from './utils.js';
-import './tests.js'; // registers tests; we will report after UI mounts
+import './tests.js';
 
 const ui = {
   sysList: document.getElementById('sysList'),
@@ -29,7 +29,7 @@ const ui = {
 
 function showToast(msg, t=1800){ ui.toast.textContent = msg; ui.toast.style.display='block'; setTimeout(()=> ui.toast.style.display='none', t); }
 
-// Three.js scene
+
 const center = document.getElementById('center');
 const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
 center.appendChild(renderer.domElement);
@@ -50,21 +50,21 @@ const starField = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsM
 function onResize(){ const w = center.clientWidth, h = center.clientHeight; renderer.setSize(w,h,false); camera.aspect = w/h; camera.updateProjectionMatrix(); }
 window.addEventListener('resize', onResize); onResize();
 
-// -------------------- System View --------------------
-let mode = 'system'; // 'system' | 'overview' | 'universe'
+
+let mode = 'system';
 let current = { group:null, star:null, planets:[], orbits:[], hz:null };
 
 function flattenPlanets(systems){
   const scaleCtl = ui.sizeScale ? parseFloat(ui.sizeScale.value || '0.12') : 0.12;
   const exaggerated = ui.exSizes && ui.exSizes.checked;
-  // Base multipliers tuned for TOI (Earth radii); keep very small by default
+
   const base = (p.radius_rj ? (p.radius_rj * (exaggerated ? 3.0 : 0.6))
                             : ((p.radius_re||1) * (exaggerated ? 0.35 : 0.10)));
-  // Final scale with clamp
+
   return Math.max(0.15, base * scaleCtl);
 }
 
-// -------------------- Overview (mini-systems grid) --------------------
+
 let overview = { groups:[], pickers:[], root:null };
 
 function clearOverview(){
@@ -75,14 +75,14 @@ function clearOverview(){
 }
 
 function buildOverview(list){
-  // list: array of systems; if omitted, use all systems
+
   clearOverview(); clearSystem(); mode='overview'; if(ui.modeBadge) ui.modeBadge.textContent='Overview';
   const arr = (list && list.length ? list : systems);
   ui.titleSystem.textContent = 'Overview';
   ui.titleSub.textContent = `${arr.length} systems • click a system`;
   const g = new THREE.Group(); scene.add(g); overview.root = g;
 
-  const N = Math.min(arr.length, 48); // show up to 48 mini systems
+  const N = Math.min(arr.length, 48);
   const cols = 8, rows = Math.ceil(N/cols);
   const cell = 85; const desired = 14; const miniColor = 0x6ea9ff;
 
@@ -93,13 +93,13 @@ function buildOverview(list){
     const cy = Math.floor(i/cols) - (rows-1)/2;
     gg.position.set(cx*cell, 0, cy*cell);
 
-    // star
+
     const sc = teffColor(sys.star?.teff ?? 5500, THREE);
     const sgeom = new THREE.SphereGeometry(1.4, 18, 12);
     const smat  = new THREE.MeshStandardMaterial({ emissive: sc, emissiveIntensity: 1.2, color:0x222233, roughness:0.6, metalness:0.1 });
     gg.add(new THREE.Mesh(sgeom, smat));
 
-    // scale to fit
+
     const aMax = Math.max(...sys.planets.map(p=>p.a_au || 0.02), 0.02);
     const base = scaleAU(aMax, true);
     const k = base > 0 ? desired / base : 1;
@@ -132,12 +132,12 @@ function buildOverview(list){
     overview.groups.push(gg);
   }
 
-  // camera to see grid
+
   const span = Math.max(cols, rows);
   camera.position.set(0, span*32, span*62);
   controls.target.set(0,0,0); controls.update();
 }
-// -------------------- System view --------------------
+
 function clearSceneGroup(g){
   if(!g) return;
   scene.remove(g);
@@ -184,18 +184,18 @@ function buildSystem(sys, selectPi=null){
 
   ui.titleSystem.textContent = sys.name; ui.titleSub.textContent = `${sys.planets.length} planet(s) • star T_eff ${(sys.star?.teff ?? 5500)}K`;
 
-  // Auto-fit camera to include all orbits at once
+
   const maxA = Math.max(...current.planets.map(m => m.userData.aU), 60);
   const z = Math.max(180, maxA * 2.2);
   const y = Math.max(80,  maxA * 0.9);
   camera.position.set(0, y, z);
   controls.target.set(0,0,0); controls.update();
 
-  // Optionally preselect a planet
+
   if(selectPi!=null && current.planets[selectPi]) selectPlanet(current.planets[selectPi]);
 }
 
-// List/search UI (left)
+
 
 function renderList(){
   const q = ui.q?.value?.trim().toLowerCase() || '';
@@ -208,15 +208,15 @@ function renderList(){
       div.onclick = ()=> { buildSystem(s); showToast(`Loaded ${s.name}`); };
       ui.sysList.appendChild(div);
     });
-    // Auto view logic:
+
     if(matches.length === 0){
-      // nothing typed or no matches -> overview all (better than empty)
+
       buildOverview(systems);
     } else if(matches.length <= 3){
-      // auto open best match (first)
+
       buildSystem(matches[0]);
     } else {
-      // many matches -> compact overview of only matches
+
       buildOverview(matches);
     }
   }
@@ -231,7 +231,7 @@ ui.dimOrbits?.addEventListener('change', ()=> current.orbits.forEach(o => o.mate
 
 function activeSystem(){ return systems.find(s => s.name === ui.titleSystem.textContent) || systems[0]; }
 
-// Buttons
+
 ui.universeBtn?.addEventListener('click', ()=> buildUniverse3D());
 ui.resetCam?.addEventListener('click', ()=> { 
   if(mode==='universe'){ camera.position.set(0, 900, 900); controls.target.set(0,0,0); controls.update(); }
@@ -243,7 +243,7 @@ ui.resetCam?.addEventListener('click', ()=> {
   }
 });
 
-// Picking
+
 const ray = new THREE.Raycaster(); const mouse = new THREE.Vector2();
 renderer.domElement.addEventListener('pointerdown', (e)=>{
   const rect = renderer.domElement.getBoundingClientRect();
@@ -287,7 +287,7 @@ function selectPlanet(m){
     `<div style="margin-top:8px"><span class="pill">Evidence</span> <span class="pill">MAST link</span> <span class="pill">Archive row</span></div>`;
 }
 
-// Animation
+
 const clock = new THREE.Clock();
 function tick(){
   requestAnimationFrame(tick);
@@ -304,7 +304,7 @@ function tick(){
       const a = p.aU; const r = a*(1-e*e)/(1+e*Math.cos(v));
       const x = r*Math.cos(v); const y = r*Math.sin(v);
       m.position.set(x, 0, y).applyAxisAngle(new THREE.Vector3(0,1,0), THREE.MathUtils.degToRad(0)).applyAxisAngle(new THREE.Vector3(1,0,0), THREE.MathUtils.degToRad(p.incl||0));
-      // Make planets (circles) face the camera
+
       m.lookAt(camera.position);
     }
   }
@@ -313,7 +313,7 @@ function tick(){
 }
 
 
-// -------------------- Universe 3D (all planets in 3D parameter cube) --------------------
+
 let universe = { mesh:null, box:null, idx:[], domain:null };
 
 function clearUniverse(){
@@ -322,7 +322,7 @@ function clearUniverse(){
 }
 
 function buildUniverse3D(){
-  // Hide other clouds
+
   clearOverview && clearOverview();
   clearSystem();
   clearUniverse();
@@ -331,7 +331,7 @@ function buildUniverse3D(){
   ui.titleSub.textContent='X=log₁₀(P days), Y=log₁₀(R R⊕), Z=log₁₀(a AU) • click a point';
 
   const idx = flattenPlanets(systems);
-  // Domains
+
   const P = idx.filter(d=>d.P>0).map(d=>Math.log10(d.P));
   const R = idx.filter(d=>d.R>0).map(d=>Math.log10(d.R));
   const A = idx.filter(d=>d.A>0).map(d=>Math.log10(d.A));
@@ -344,7 +344,7 @@ function buildUniverse3D(){
   const mapY = v => -H/2 + ( (Math.log10(v)-yMin)/(yMax-yMin) ) * H;
   const mapZ = v => -D/2 + ( (Math.log10(v)-zMin)/(zMax-zMin) ) * D;
 
-  // Instanced circles instead of spheres
+
   const count = Math.min(idx.length, 10000);
   const geom = new THREE.CircleGeometry(1, 32);
   const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent:true, opacity:0.95, depthWrite:false, side: THREE.DoubleSide });
@@ -373,7 +373,7 @@ function buildUniverse3D(){
   universe.idx = idx;
   universe.domain = {xMin,xMax,yMin,yMax,zMin,zMax,W,H,D};
 
-  // Box/axes
+
   const box = new THREE.Group();
   const edge = new THREE.LineBasicMaterial({ color: 0x6f85c9, transparent:true, opacity:0.5 });
   const lines = [
@@ -397,11 +397,11 @@ function buildUniverse3D(){
   scene.add(box);
   universe.box = box;
 
-  // Camera
+
   camera.position.set(0, Math.max(H, 900), Math.max(D*0.6, 800));
   controls.target.set(0,0,0); controls.update();
 }
-// Init
+
 renderList();
 reportTests(ui.testBadge);
 tick();

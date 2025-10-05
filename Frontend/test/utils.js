@@ -1,23 +1,23 @@
-// Scene scale
+
 export const AU_TO_U = 120;
 
-// Map stellar Teff (3000–8000K) to a blue→red-ish color via HSL
+
 export const teffColor = (T, THREE) => {
   const clamped = Math.max(3000, Math.min(8000, T));
-  const h = ((clamped - 3000) / 7000) * 0.7; // 0..0.7 (roughly blue→yellow)
+  const h = ((clamped - 3000) / 7000) * 0.7;
   return new THREE.Color().setHSL(h, 1.0, 0.6);
 };
 
-// Optional logarithmic scaling for orbit radii
+
 export function scaleAU(a, useLog){
-  if (useLog) return Math.log(1 + a * 8) * AU_TO_U; // gentle compression
+  if (useLog) return Math.log(1 + a * 8) * AU_TO_U;
   return a * AU_TO_U;
 }
 
-// Kepler solver: mean anomaly M -> true anomaly v
+
 export function trueAnomaly(M, e){
   M = M % (2*Math.PI); if (M < 0) M += 2*Math.PI;
-  let E = e < 0.8 ? M : Math.PI; // initial guess
+  let E = e < 0.8 ? M : Math.PI;
   for (let i=0; i<6; i++){
     const f = E - e*Math.sin(E) - M;
     const fp = 1 - e*Math.cos(E);
@@ -29,7 +29,7 @@ export function trueAnomaly(M, e){
   return Math.atan2(sinv, cosv);
 }
 
-// --- Minimal test harness ---
+
 const _tests = [];
 export function test(name, fn){ _tests.push([name, fn]); }
 export function approx(a, b, eps=1e-6){ if (Math.abs(a-b) > eps) throw new Error(`Expected ${a} ≈ ${b}`); }

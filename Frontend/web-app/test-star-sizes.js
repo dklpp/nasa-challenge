@@ -1,9 +1,6 @@
-/**
- * Test script to verify star size calculations based on st_rad values
- * Run with: node test-star-sizes.js
- */
 
-// Sample st_rad values from K2 dataset
+
+
 const testStars = [
   { name: "Tiny Red Dwarf", st_rad: 0.12 },
   { name: "Small Red Dwarf", st_rad: 0.31 },
@@ -22,16 +19,16 @@ console.log("K2 Dataset st_rad range: 0.12 R☉ to 85 R☉\n");
 testStars.forEach(star => {
   const stellarRadius = star.st_rad;
   
-  // System view (close-up) - exSizes true
+
   const systemSizeExaggerated = Math.max(3, Math.min(stellarRadius * 6, 40 + Math.log(stellarRadius) * 8));
   
-  // System view (close-up) - exSizes false
+
   const systemSizeNormal = Math.max(1.5, Math.min(stellarRadius * 1.8, 12 + Math.log(stellarRadius) * 3));
   
-  // Explore view (all systems) - exSizes true
+
   const exploreSizeExaggerated = Math.max(1.5, Math.min(stellarRadius * 2.5, 15 + Math.log(stellarRadius) * 5));
   
-  // Explore view (all systems) - exSizes false
+
   const exploreSizeNormal = Math.max(1, Math.min(stellarRadius * 1, 8 + Math.log(stellarRadius) * 2));
   
   console.log(`${star.name} (${star.st_rad} R☉):`);
