@@ -45,8 +45,8 @@ export async function GET() {
 
     if (!files.length) return NextResponse.json([] as System[]);
 
-    // Option: prefer files whose name includes TOI|k2|cumulative, otherwise all
-    const prefer = files.filter((f) => /(toi|k2|cumulative)/i.test(path.basename(f)));
+    // Option: prefer files whose name includes 'filtered', otherwise all
+    const prefer = files.filter((f) => /(filtered)/i.test(path.basename(f)));
     const targets = prefer.length ? prefer : files;
 
     const systemsMap = new Map<string, System>();
@@ -70,7 +70,6 @@ export async function GET() {
           )
         );
       } catch (e) {
-        // If parsing fails, skip this file
         continue;
       }
 
@@ -116,6 +115,7 @@ export async function GET() {
         const radius_re = toNum(pick(row, ["pl_rade", "radius_re", "radius_earth"])) ?? undefined;
         const radius_rj = toNum(pick(row, ["pl_radj", "radius_rj", "radius_jupiter"])) ?? undefined;
         const incl = toNum(pick(row, ["pl_orbincl", "incl", "inclination"])) ?? undefined;
+        const pl_eqt = toNum(pick(row, ["pl_eqt", "eqt", "equilibrium_temp"])) ?? undefined;
 
         // Require at minimum a and period to animate; otherwise skip row
         if (a_au === undefined || period_days === undefined) continue;
@@ -148,6 +148,7 @@ export async function GET() {
           radius_re,
           radius_rj,
           incl,
+          pl_eqt,
         };
         sys.planets.push(planet);
       }

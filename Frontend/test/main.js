@@ -23,7 +23,6 @@ const ui = {
   thumbs: document.getElementById('thumbs'),
   toast: document.getElementById('toast'),
   testBadge: document.getElementById('testBadge'),
-  exploreBtn: document.getElementById('exploreBtn'),
   universeBtn: document.getElementById('universeBtn'),
   modeBadge: document.getElementById('modeBadge'),
 };
@@ -51,113 +50,11 @@ const starField = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsM
 function onResize(){ const w = center.clientWidth, h = center.clientHeight; renderer.setSize(w,h,false); camera.aspect = w/h; camera.updateProjectionMatrix(); }
 window.addEventListener('resize', onResize); onResize();
 
-// -------------------- Explore (All Planets) --------------------
-let mode = 'explore'; // 'explore' | 'system'
-let explore = { mesh:null, axis:null, idx:[], domain:null };
+// -------------------- System View --------------------
+let mode = 'system'; // 'system' | 'overview' | 'universe'
 let current = { group:null, star:null, planets:[], orbits:[], hz:null };
 
 function flattenPlanets(systems){
-  const out = [];
-  for(let si=0; si<systems.length; si++){
-    const s = systems[si]; const starT = s.star?.teff ?? 5500;
-    for(let pi=0; pi<s.planets.length; pi++){
-      const p = s.planets[pi];
-      const P = p.period_days || p.per || null;
-      const R = p.radius_re || (p.radius_rj? p.radius_rj*11.21 : null);
-      if(!P || !R) continue;
-      out.push({ si, pi, sysName: s.name, name: `${s.name} ${p.name}`, P, R, teff: starT, a_au: p.a_au||null, e: p.e||0, incl: p.incl||0 });
-    }
-  }
-  return out;
-}
-
-function buildAxes(domain){
-  const grp = new THREE.Group();
-  const {xMin,xMax,zMin,zMax, W, H} = domain;
-  // Axes lines (X and Z)
-  const mat = new THREE.LineBasicMaterial({ color: 0x6f85c9, transparent:true, opacity:0.6 });
-  const xgeo = new THREE.BufferGeometry().setFromPoints([ new THREE.Vector3(-W/2,0,-H/2), new THREE.Vector3(W/2,0,-H/2) ]);
-  const zgeo = new THREE.BufferGeometry().setFromPoints([ new THREE.Vector3(-W/2,0,-H/2), new THREE.Vector3(-W/2,0,H/2) ]);
-  grp.add(new THREE.Line(xgeo, mat));
-  grp.add(new THREE.Line(zgeo, mat));
-  // tick marks (log decades)
-  const tickMat = new THREE.LineBasicMaterial({ color: 0x3f558f, transparent:true, opacity:0.5 });
-  function addTickX(x){
-    const gx = new THREE.BufferGeometry().setFromPoints([ new THREE.Vector3(x,0,-H/2), new THREE.Vector3(x,0,-H/2-6) ]);
-    grp.add(new THREE.Line(gx, tickMat));
-  }
-  function addTickZ(z){
-    const gz = new THREE.BufferGeometry().setFromPoints([ new THREE.Vector3(-W/2,0,z), new THREE.Vector3(-W/2-6,0,z) ]);
-    grp.add(new THREE.Line(gz, tickMat));
-  }
-  // 10^-1..10^3 for period, 10^-0.3..10^1.5 for radius
-  for(let d=-1; d<=3; d++){ const t = (d - (-1)) / (3 - (-1)); const x = -W/2 + t*W; addTickX(x); }
-  for(let d=-0.3; d<=1.5; d+=0.3){ const t = (d - (-0.3)) / (1.5 - (-0.3)); const z = -H/2 + t*H; addTickZ(z); }
-  return grp;
-}
-
-function buildExplore(){
-  // Clear any system view
-  clearSystem();
-  if(explore.mesh){ scene.remove(explore.mesh); explore.mesh.geometry.dispose(); explore.mesh.material.dispose(); explore.mesh=null; }
-  if(explore.axis){ scene.remove(explore.axis); explore.axis=null; }
-  mode='explore'; ui.modeBadge.textContent = 'Explore'; ui.titleSystem.textContent='All Planets'; ui.titleSub.textContent='Click a planet to open its system';
-  // Flatten
-  const idx = flattenPlanets(systems);
-  // Compute domains
-  const P = idx.filter(d=>d.P>0).map(d=>Math.log10(d.P));
-  const R = idx.filter(d=>d.R>0).map(d=>Math.log10(d.R));
-  const xMin = Math.min(-1, Math.min(...P)), xMax = Math.max(3, Math.max(...P));
-  const zMin = Math.min(-0.3, Math.min(...R)), zMax = Math.max(1.5, Math.max(...R));
-  const W = 1800, H = 1000;
-  const mapX = v => -W/2 + ( (Math.log10(v)-xMin)/(xMax-xMin) ) * W;
-  const mapZ = v => -H/2 + ( (Math.log10(v)-zMin)/(zMax-zMin) ) * H;
-
-  // Geometry & material
-  const count = Math.min(idx.length, 6000);
-  const geom = new THREE.CircleGeometry(1, 24);
-  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent:true, opacity:0.95, depthWrite:false });
-  const mesh = new THREE.InstancedMesh(geom, mat, count);
-  mesh.rotation.x = -Math.PI/2;
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  const color = new THREE.Color();
-
-  // Fill instances
-  for(let i=0;i<count;i++){
-    const d = idx[i];
-    const s = Math.max(0.8, Math.sqrt(d.R||1) * 1.2); // perceptual size
-    const x = mapX(d.P);
-    const z = mapZ(d.R);
-    const m = new THREE.Matrix4().compose(
-      new THREE.Vector3(x, 0, z),
-      new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI/2, 0, 0)),
-      new THREE.Vector3(s, s, 1)
-    );
-    mesh.setMatrixAt(i, m);
-    // color by star teff
-    const c = teffColor(d.teff, THREE);
-    mesh.setColorAt(i, c);
-  }
-  mesh.instanceMatrix.needsUpdate = true;
-  mesh.instanceColor.needsUpdate = true;
-  scene.add(mesh);
-  explore.mesh = mesh;
-  explore.idx = idx;
-  explore.domain = {xMin,xMax,zMin,zMax,W,H};
-
-  // Axes
-  const axis = buildAxes(explore.domain);
-  scene.add(axis);
-  explore.axis = axis;
-
-  // Camera top/center
-  camera.position.set(0, 900, 1);
-  controls.target.set(0,0,0); controls.update();
-}
-
-
-// --- Helper: scene radius from planet radii with size scale ---
-function planetSceneRadius(p){
   const scaleCtl = ui.sizeScale ? parseFloat(ui.sizeScale.value || '0.12') : 0.12;
   const exaggerated = ui.exSizes && ui.exSizes.checked;
   // Base multipliers tuned for TOI (Earth radii); keep very small by default
@@ -219,8 +116,8 @@ function buildOverview(list){
       const orbit = new THREE.LineLoop(ogeom, omat); orbit.rotation.x = -Math.PI/2; gg.add(orbit);
 
       const rScene = Math.max(0.4, (p.radius_rj? p.radius_rj*0.5 : (p.radius_re||1)*0.15));
-      const pgeom = new THREE.SphereGeometry(rScene, 16, 12);
-      const pmat  = new THREE.MeshStandardMaterial({ color: miniColor, metalness:0.2, roughness:0.5 });
+      const pgeom = new THREE.CircleGeometry(rScene, 32);
+      const pmat  = new THREE.MeshBasicMaterial({ color: miniColor, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
       const pm    = new THREE.Mesh(pgeom, pmat);
       const v = Math.random()*Math.PI*2;
       const r = aU*(1-e*e)/(1+e*Math.cos(v));
@@ -249,9 +146,6 @@ function clearSceneGroup(g){
 function clearSystem(){ clearSceneGroup(current.group); current = { group:null, star:null, planets:[], orbits:[], hz:null }; }
 
 function buildSystem(sys, selectPi=null){
-  // Remove explore cloud but keep to allow back navigation
-  if(explore.mesh){ scene.remove(explore.mesh); }
-  if(explore.axis){ scene.remove(explore.axis); }
   clearSystem(); mode='system'; ui.modeBadge.textContent = 'System';
 
   const g = new THREE.Group(); scene.add(g); current.group = g;
@@ -280,9 +174,9 @@ function buildSystem(sys, selectPi=null){
     const orbit = new THREE.LineLoop(orbGeom, orbMat); orbit.rotation.x = -Math.PI/2; orbit.rotation.z = inc; orbit.userData.index = idx; g.add(orbit); current.orbits.push(orbit);
 
     const rScene = planetSceneRadius(p);
-    const geom = new THREE.SphereGeometry(rScene, 24, 16);
+    const geom = new THREE.CircleGeometry(rScene, 32);
     const color = teffColor(sys.star?.teff ?? 5500, THREE).clone().offsetHSL(0,0,-0.15);
-    const mat = new THREE.MeshStandardMaterial({ color, metalness:0.2, roughness:0.4 });
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
     const m = new THREE.Mesh(geom, mat);
     m.userData = { ...p, aU, bU, cU, inc, M: Math.random()*Math.PI*2, name: `${sys.name} ${p.name}`, index: idx };
     g.add(m); current.planets.push(m);
@@ -332,17 +226,14 @@ ui.q?.addEventListener('input', renderList);
 
 ['exSizes','logScale','showHZ'].forEach(id => ui[id]?.addEventListener('change', ()=> {
   if(mode==='system' && current.group) buildSystem(activeSystem());
-  if(mode==='explore') buildExplore();
 }));
 ui.dimOrbits?.addEventListener('change', ()=> current.orbits.forEach(o => o.material.opacity = ui.dimOrbits.checked? 0.35 : 0.8));
 
 function activeSystem(){ return systems.find(s => s.name === ui.titleSystem.textContent) || systems[0]; }
 
 // Buttons
-ui.exploreBtn?.addEventListener('click', ()=> buildExplore());
 ui.universeBtn?.addEventListener('click', ()=> buildUniverse3D());
 ui.resetCam?.addEventListener('click', ()=> { 
-  if(mode==='explore'){ camera.position.set(0, 900, 1); controls.target.set(0,0,0); controls.update(); }
   if(mode==='universe'){ camera.position.set(0, 900, 900); controls.target.set(0,0,0); controls.update(); }
   if(mode==='system'){ 
     const maxA = Math.max(...current.planets.map(m => m.userData.aU), 60);
@@ -363,18 +254,6 @@ renderer.domElement.addEventListener('pointerdown', (e)=>{
   if(mode==='overview'){
     const hits = ray.intersectObjects(overview.pickers, false);
     if(hits.length){ const sys = hits[0].object.userData.sys; buildSystem(sys); }
-    return;
-  }
-
-  if(mode==='explore' && explore.mesh){
-    const hits = ray.intersectObject(explore.mesh, false);
-    if(hits.length){
-      const id = hits[0].instanceId;
-      if(id!=null){
-        const d = explore.idx[id];
-        buildSystem(systems[d.si], d.pi);
-      }
-    }
     return;
   }
 
@@ -425,6 +304,8 @@ function tick(){
       const a = p.aU; const r = a*(1-e*e)/(1+e*Math.cos(v));
       const x = r*Math.cos(v); const y = r*Math.sin(v);
       m.position.set(x, 0, y).applyAxisAngle(new THREE.Vector3(0,1,0), THREE.MathUtils.degToRad(0)).applyAxisAngle(new THREE.Vector3(1,0,0), THREE.MathUtils.degToRad(p.incl||0));
+      // Make planets (circles) face the camera
+      m.lookAt(camera.position);
     }
   }
 
@@ -442,8 +323,6 @@ function clearUniverse(){
 
 function buildUniverse3D(){
   // Hide other clouds
-  if(explore && explore.mesh) scene.remove(explore.mesh);
-  if(explore && explore.axis) scene.remove(explore.axis);
   clearOverview && clearOverview();
   clearSystem();
   clearUniverse();
@@ -465,10 +344,10 @@ function buildUniverse3D(){
   const mapY = v => -H/2 + ( (Math.log10(v)-yMin)/(yMax-yMin) ) * H;
   const mapZ = v => -D/2 + ( (Math.log10(v)-zMin)/(zMax-zMin) ) * D;
 
-  // Instanced spheres
+  // Instanced circles instead of spheres
   const count = Math.min(idx.length, 10000);
-  const geom = new THREE.SphereGeometry(1, 12, 10);
-  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent:true, opacity:0.95, depthWrite:false });
+  const geom = new THREE.CircleGeometry(1, 32);
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent:true, opacity:0.95, depthWrite:false, side: THREE.DoubleSide });
   const mesh = new THREE.InstancedMesh(geom, mat, count);
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 

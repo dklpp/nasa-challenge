@@ -1,21 +1,17 @@
 "use client";
-import React from "react";
 
 type Props = {
   speed: number;
   onSpeed: (v: number) => void;
   speedVal: string;
   onReset: () => void;
-  sizeScale: number;
-  onSizeScale: (v: number) => void;
-  sizeVal: string;
   modeLabel: string;
-  onExplore: () => void;
   onToggleDetails?: () => void;
   detailsVisible?: boolean;
+  selectedStar?: string | null;
 };
 
-export function HUD({ speed, onSpeed, speedVal, onReset, sizeScale, onSizeScale, sizeVal, modeLabel, onExplore, onToggleDetails, detailsVisible }: Props) {
+export function HUD({ speed, onSpeed, speedVal, onReset, modeLabel, onToggleDetails, detailsVisible, selectedStar }: Props) {
   return (
     <div id="hud">
       <label>Speed</label>
@@ -28,30 +24,14 @@ export function HUD({ speed, onSpeed, speedVal, onReset, sizeScale, onSizeScale,
         value={speed}
         onChange={(e) => onSpeed(parseFloat(e.target.value))}
       />
-      <span id="speedVal" className="badge">
-        {speedVal}
-      </span>
-      <label style={{ marginLeft: 8 }}>Size</label>
-      <input
-        id="sizeScale"
-        type="range"
-        min={0.05}
-        max={1}
-        step={0.01}
-        value={sizeScale}
-        onChange={(e) => onSizeScale(parseFloat(e.target.value))}
-      />
-      <span id="sizeVal" className="badge">
-        {sizeVal}
-      </span>
-      <span id="modeBadge" className="badge">{modeLabel}</span>
-      <button id="exploreBtn" onClick={onExplore}>Explore</button>
+      <span id="speedVal" className="badge">{speedVal}</span>
+      <span id="modeBadge" className="badge whitespace-nowrap">{modeLabel}</span>
       {onToggleDetails && (
         <button id="toggleDetails" onClick={onToggleDetails}>
           {detailsVisible ? "Hide details" : "Show details"}
         </button>
       )}
-      <button id="resetCam" onClick={onReset}>
+      <button id="resetCam" className="whitespace-nowrap" onClick={onReset}>
         Reset view
       </button>
     </div>

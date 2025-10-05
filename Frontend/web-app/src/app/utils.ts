@@ -8,6 +8,70 @@ export function teffColor(T: number, THREE: typeof import('three')): any{
   return new (THREE as any).Color().setHSL(h, 1.0, 0.6);
 }
 
+// Map planet equilibrium temperature (pl_eqt) to color
+// Cold planets (< 200K): blue/purple
+// Temperate planets (200-400K): cyan/green/yellow
+// Hot planets (> 400K): orange/red
+export function planetTempColor(T: number | undefined, THREE: typeof import('three')): any {
+  if (T === undefined || T === null || !isFinite(T)) {
+    // Default gray color for planets without temperature data
+    return new (THREE as any).Color(0x888888);
+  }
+  
+  // Temperature ranges (in Kelvin)
+  // Venus: ~735K, Earth: ~255K, Mars: ~210K, Jupiter: ~110K, Neptune: ~55K
+  // Hot Jupiters: 1000-2500K
+  
+  const clamped = Math.max(0, Math.min(2500, T));
+  
+  let h: number, s: number, l: number;
+  
+  if (clamped < 100) {
+    // Very cold (0-100K): Deep blue to purple
+    h = 0.65 - (clamped / 100) * 0.1; // 0.65 to 0.55 (blue to purple-blue)
+    s = 0.8;
+    l = 0.4;
+  } else if (clamped < 200) {
+    // Cold (100-200K): Purple-blue to bright blue
+    const t = (clamped - 100) / 100;
+    h = 0.55 + t * 0.05; // 0.55 to 0.60 (purple-blue to blue)
+    s = 0.8;
+    l = 0.45;
+  } else if (clamped < 300) {
+    // Cool temperate (200-300K): Blue to cyan
+    const t = (clamped - 200) / 100;
+    h = 0.60 - t * 0.10; // 0.60 to 0.50 (blue to cyan)
+    s = 0.7;
+    l = 0.5;
+  } else if (clamped < 400) {
+    // Warm temperate (300-400K): Cyan to yellow-green
+    const t = (clamped - 300) / 100;
+    h = 0.50 - t * 0.25; // 0.50 to 0.25 (cyan to yellow-green)
+    s = 0.6;
+    l = 0.55;
+  } else if (clamped < 600) {
+    // Hot (400-600K): Yellow to orange
+    const t = (clamped - 400) / 200;
+    h = 0.15 - t * 0.05; // 0.15 to 0.10 (yellow to orange)
+    s = 0.9;
+    l = 0.6;
+  } else if (clamped < 1000) {
+    // Very hot (600-1000K): Orange to red
+    const t = (clamped - 600) / 400;
+    h = 0.08 - t * 0.08; // 0.08 to 0.00 (orange to red)
+    s = 0.95;
+    l = 0.55;
+  } else {
+    // Extremely hot (1000K+): Deep red to bright red-orange
+    const t = Math.min((clamped - 1000) / 1500, 1.0);
+    h = 0.02; // red
+    s = 1.0;
+    l = 0.5 + t * 0.2; // Brighter as it gets hotter
+  }
+  
+  return new (THREE as any).Color().setHSL(h, s, l);
+}
+
 // Optional logarithmic scaling for orbit radii
 export function scaleAU(a: number, useLog: boolean){
   if (useLog) return Math.log(1 + a * 8) * AU_TO_U; // gentle compression

@@ -6,6 +6,7 @@ export type Planet = {
   radius_re?: number; // Earth radii
   radius_rj?: number; // Jupiter radii
   incl?: number; // orbital inclination in degrees
+  pl_eqt?: number; // planet equilibrium temperature in Kelvin
 };
 
 export type System = {

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { type Planet as PlanetT, type System as SystemT } from "./data";
-import { teffColor, scaleAU, trueAnomaly, celestialToCartesian } from "./utils";
+import { teffColor, planetTempColor, scaleAU, trueAnomaly, celestialToCartesian } from "./utils";
 import SearchBar from "../components/SearchBar";
 import FiltersPanel from "../components/FiltersPanel";
 import SystemsList from "../components/SystemsList";
@@ -36,11 +36,18 @@ export default function Home() {
   const [sizeScale, setSizeScale] = useState(0.12);
   const [mode, setMode] = useState<"explore" | "system" | "earth">("earth");
   const [showDetails, setShowDetails] = useState(true);
+  const [selectedStar, setSelectedStar] = useState<string | null>(null);
 
   const centerRef = useRef<HTMLDivElement | null>(null);
   const detailsRef = useRef<HTMLDivElement | null>(null);
   const tourRef = useRef<{ timer: any; idx: number } | null>(null);
   const sceneRef = useRef<any | null>(null);
+  const speedRef = useRef(speed);
+
+  // Sync speed state with ref so animation loop can access current value
+  useEffect(() => {
+    speedRef.current = speed;
+  }, [speed]);
 
   function showToast(msg: string, t = 1800) {
     setToast(msg);
@@ -103,6 +110,44 @@ export default function Home() {
     controls.minDistance = 30;
     controls.maxDistance = 1500;
 
+    // Keyboard controls for camera movement
+    const keys = {
+      w: false,
+      a: false,
+      s: false,
+      d: false,
+      q: false,
+      e: false,
+      arrowup: false,
+      arrowdown: false,
+      arrowleft: false,
+      arrowright: false,
+      shift: false,
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      if (key in keys) {
+        (keys as any)[key] = true;
+      }
+      if (e.key === 'Shift') {
+        keys.shift = true;
+      }
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      if (key in keys) {
+        (keys as any)[key] = false;
+      }
+      if (e.key === 'Shift') {
+        keys.shift = false;
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+
   scene.add(new THREE.AmbientLight(0x506080, 0.8));
     // Global light to avoid creating hundreds of per-star lights
     const globalLight = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -129,6 +174,95 @@ export default function Home() {
       discTex = new THREE.CanvasTexture(c);
       discTex.needsUpdate = true;
       return discTex;
+    }
+
+    // Create a procedural planet texture with horizontal gradient bands
+    function createPlanetTexture(baseColor: any) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d')!;
+      
+      // Create base gradient from top to bottom
+      const gradient = ctx.createLinearGradient(0, 0, 0, 512);
+      
+      // Generate variations of the base color for gradient bands
+      const h = { h: 0, s: 0, l: 0 };
+      baseColor.getHSL(h);
+      
+      // Create swirling horizontal bands with color variations
+      const numBands = 20;
+      for (let i = 0; i < numBands; i++) {
+        const t = i / numBands;
+        
+        // Vary lightness and saturation for each band
+        const lightnessVar = 0.1 + Math.sin(t * Math.PI * 4) * 0.15;
+        const saturationVar = Math.cos(t * Math.PI * 3) * 0.1;
+        
+        const color = new THREE.Color().setHSL(
+          h.h + Math.sin(t * Math.PI * 2) * 0.05,
+          Math.max(0, Math.min(1, h.s + saturationVar)),
+          Math.max(0.2, Math.min(0.8, h.l + lightnessVar))
+        );
+        
+        gradient.addColorStop(t, `rgb(${Math.floor(color.r * 255)}, ${Math.floor(color.g * 255)}, ${Math.floor(color.b * 255)})`);
+      }
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 1024, 512);
+      
+      // Add horizontal swirling cloud/storm patterns
+      ctx.globalCompositeOperation = 'overlay';
+      
+      // Create multiple wavy bands
+      for (let band = 0; band < 12; band++) {
+        const yBase = (band / 12) * 512;
+        const amplitude = 20 + Math.random() * 30;
+        const frequency = 0.005 + Math.random() * 0.005;
+        const phase = Math.random() * Math.PI * 2;
+        
+        ctx.beginPath();
+        ctx.moveTo(0, yBase);
+        
+        for (let x = 0; x <= 1024; x += 2) {
+          const y = yBase + Math.sin(x * frequency + phase) * amplitude;
+          ctx.lineTo(x, y);
+        }
+        
+        ctx.lineTo(1024, yBase + 60);
+        ctx.lineTo(0, yBase + 60);
+        ctx.closePath();
+        
+        // Lighter swirling bands
+        const bandColor = new THREE.Color().setHSL(
+          h.h + Math.random() * 0.1 - 0.05,
+          h.s * 0.6,
+          0.7 + Math.random() * 0.2
+        );
+        ctx.fillStyle = `rgba(${Math.floor(bandColor.r * 255)}, ${Math.floor(bandColor.g * 255)}, ${Math.floor(bandColor.b * 255)}, 0.3)`;
+        ctx.fill();
+      }
+      
+      // Add some darker storm swirls
+      ctx.globalCompositeOperation = 'multiply';
+      for (let i = 0; i < 8; i++) {
+        const x = Math.random() * 1024;
+        const y = Math.random() * 512;
+        const width = 100 + Math.random() * 150;
+        const height = 40 + Math.random() * 60;
+        
+        const darkColor = new THREE.Color().setHSL(h.h, h.s, 0.3);
+        const grd = ctx.createRadialGradient(x, y, 0, x, y, width);
+        grd.addColorStop(0, `rgba(${Math.floor(darkColor.r * 255)}, ${Math.floor(darkColor.g * 255)}, ${Math.floor(darkColor.b * 255)}, 0.4)`);
+        grd.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        
+        ctx.fillStyle = grd;
+        ctx.fillRect(x - width, y - height, width * 2, height * 2);
+      }
+      
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      return texture;
     }
     const starField = new THREE.Group();
     function makeStars(
@@ -253,8 +387,10 @@ export default function Home() {
         metalness: 0.1,
       });
       const starMesh = new THREE.Mesh(starGeom, starMat);
+      starMesh.userData = { systemName: sys.name, type: 'star' };
       g.add(starMesh);
       current.star = starMesh;
+      current.stars.push(starMesh);
       const lamp = new THREE.PointLight(starCol.getHex(), 2.2, 0, 2);
       lamp.position.set(0, 0, 0);
       g.add(lamp);
@@ -318,13 +454,15 @@ export default function Home() {
               p.radius_rj ? p.radius_rj * 1.2 : (p.radius_re || 0) * 0.2
             );
         const geom = new THREE.SphereGeometry(rScene, 24, 16);
-        const color = teffColor(sys.star.teff, THREE)
-          .clone()
-          .offsetHSL(0, 0, -0.15);
+        const color = planetTempColor(p.pl_eqt, THREE);
+        
+        // Create gradient texture for the planet
+        const planetTexture = createPlanetTexture(color);
+        
         const mat = new THREE.MeshStandardMaterial({
-          color,
+          map: planetTexture,
           metalness: 0.2,
-          roughness: 0.4,
+          roughness: 0.6,
         });
         const m = new THREE.Mesh(geom, mat);
         (m as any).userData = {
@@ -359,179 +497,6 @@ export default function Home() {
       controls.update();
     }
 
-    function buildExplore(systems: Sys[]) {
-      clearSystem();
-      const g = new THREE.Group();
-      scene.add(g);
-      current.group = g;
-
-      // Earth at the center
-      const earthGeom = new THREE.SphereGeometry(6, 64, 32);
-      
-      // Create a simple procedural Earth texture using a canvas
-      const earthCanvas = document.createElement('canvas');
-      earthCanvas.width = 512;
-      earthCanvas.height = 256;
-      const ctx = earthCanvas.getContext('2d')!;
-      
-      // Base ocean color
-      ctx.fillStyle = '#1a4d8f';
-      ctx.fillRect(0, 0, 512, 256);
-      
-      // Add continents using green patches
-      ctx.fillStyle = '#2d5a2d';
-      for (let i = 0; i < 150; i++) {
-        const x = Math.random() * 512;
-        const y = Math.random() * 256;
-        const size = Math.random() * 60 + 20;
-        ctx.beginPath();
-        ctx.arc(x, y, size, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      
-      // Add lighter green patches for variety
-      ctx.fillStyle = '#4a7c4a';
-      for (let i = 0; i < 100; i++) {
-        const x = Math.random() * 512;
-        const y = Math.random() * 256;
-        const size = Math.random() * 40 + 10;
-        ctx.beginPath();
-        ctx.arc(x, y, size, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      
-      // Add white clouds
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-      for (let i = 0; i < 80; i++) {
-        const x = Math.random() * 512;
-        const y = Math.random() * 256;
-        const size = Math.random() * 30 + 10;
-        ctx.beginPath();
-        ctx.arc(x, y, size, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      
-      const earthTexture = new THREE.CanvasTexture(earthCanvas);
-      earthTexture.needsUpdate = true;
-      
-      const earthMat = new THREE.MeshStandardMaterial({
-        map: earthTexture,
-        metalness: 0.2,
-        roughness: 0.8,
-      });
-      const earth = new THREE.Mesh(earthGeom, earthMat);
-      earth.rotation.x = THREE.MathUtils.degToRad(23.5); // Earth's axial tilt
-      g.add(earth);
-      const earthGlow = new THREE.PointLight(0x3a7cff, 0.6, 150, 2);
-      earthGlow.position.set(0, 0, 0);
-      g.add(earthGlow);
-
-      // Distribute systems around Earth using a Fibonacci sphere
-      const Nsys = systems.length;
-      const R = 950; // radius of distribution sphere
-      const golden = Math.PI * (3 - Math.sqrt(5));
-      let totalPlanets = 0;
-
-      systems.forEach((sys, i) => {
-        const y = 1 - (i / Math.max(1, Nsys - 1)) * 2; // 1..-1
-        const r = Math.sqrt(Math.max(0, 1 - y * y));
-        const theta = golden * i;
-        const x = Math.cos(theta) * r;
-        const z = Math.sin(theta) * r;
-        const pos = new THREE.Vector3(x, y, z).multiplyScalar(R);
-
-        const sg = new THREE.Group();
-        sg.position.copy(pos);
-        g.add(sg);
-
-        // Star
-        const starCol = teffColor(sys.star.teff, THREE);
-        const starGeom = new THREE.SphereGeometry(
-          exSizes ? 7 : Math.max(2, ((sys.star as any).radius_rs ?? 1) * 2.0),
-          24,
-          12
-        );
-        const starMat = new THREE.MeshStandardMaterial({
-          emissive: starCol,
-          emissiveIntensity: 1.2,
-          color: 0x222233,
-          roughness: 0.45,
-          metalness: 0.1,
-        });
-  const starMesh = new THREE.Mesh(starGeom, starMat);
-  (starMesh as any).userData = {
-    systemName: sys.name,
-    type: 'star',
-  };
-  sg.add(starMesh);
-  current.stars.push(starMesh as any);
-
-        // Planets and orbits (lighter geometry for perf)
-        sys.planets.forEach((p0) => {
-          const p = { ...p0 } as Planet;
-          const a = Math.max(0.004, p.a_au);
-          const e = Math.min(0.95, Math.max(0, p.e || 0));
-          const aU = scaleAU(a, logScale);
-          const bU = aU * Math.sqrt(1 - e * e);
-          const cU = Math.sqrt(Math.max(0, aU * aU - bU * bU));
-          const inc = THREE.MathUtils.degToRad(p.incl || 0);
-
-          // Orbit (reduced resolution for performance)
-          const N = 72;
-          const pts: any[] = [];
-          for (let j = 0; j <= N; j++) {
-            const th = (j / N) * 2 * Math.PI;
-            const ox = aU * Math.cos(th) - cU;
-            const oy = bU * Math.sin(th);
-            pts.push(new THREE.Vector3(ox, 0, oy));
-          }
-          const orbGeom = new THREE.BufferGeometry().setFromPoints(pts);
-          const orbMat = new THREE.LineBasicMaterial({
-            color: dimOrbits ? 0x28406f : 0x4066aa,
-            transparent: true,
-            opacity: dimOrbits ? 0.28 : 0.55,
-          });
-          const orbit = new THREE.LineLoop(orbGeom, orbMat);
-          orbit.rotation.set(inc, 0, 0);
-          sg.add(orbit);
-          current.orbits.push(orbit as any);
-
-          // Planet mesh
-          const rScene = exSizes
-            ? Math.max(1.4, p.radius_rj ? p.radius_rj * 5 : (p.radius_re || 0) * 0.7)
-            : Math.max(0.35, p.radius_rj ? p.radius_rj * 1.0 : (p.radius_re || 0) * 0.18);
-          const geom = new THREE.SphereGeometry(rScene, 20, 12);
-          const color = teffColor(sys.star.teff, THREE).clone().offsetHSL(0, 0, -0.15);
-          const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.2, roughness: 0.4 });
-          const m = new THREE.Mesh(geom, mat);
-          (m as any).userData = {
-            ...p,
-            aU,
-            bU,
-            cU,
-            inc,
-            M: Math.random() * Math.PI * 2,
-            name: `${sys.name} ${p.name}`,
-          };
-          const v0 = trueAnomaly((m as any).userData.M, e);
-          const r0 = (aU * (1 - e * e)) / (1 + e * Math.cos(v0));
-          const x0 = r0 * Math.cos(v0);
-          const y0 = r0 * Math.sin(v0);
-          m.position.set(x0, 0, y0).applyAxisAngle(new THREE.Vector3(1, 0, 0), inc);
-          sg.add(m);
-          current.planets.push(m as any);
-        });
-      });
-
-      setActive("Explore");
-      setTitleSub(`${systems.length} systems • click any planet`);
-      // Frame the whole distribution sphere
-      controls.target.set(0, 0, 0);
-      camera.position.set(0, 600, 1200);
-      controls.maxDistance = 2500;
-      controls.update();
-    }
-
     function buildEarthCentered(systems: Sys[]) {
       // Note: Despite the name, this creates a heliocentric (Sun-centered) view
       // with exoplanet systems positioned by their celestial coordinates
@@ -553,8 +518,10 @@ export default function Home() {
       });
       
       const sunMesh = new THREE.Mesh(sunGeom, sunMat);
+      sunMesh.userData = { systemName: 'Solar System', type: 'star' };
       g.add(sunMesh);
       current.star = sunMesh; // Store for animation
+      current.stars.push(sunMesh);
       
       // Add solar flares/prominences using particle system
       const flareGeom = new THREE.BufferGeometry();
@@ -758,7 +725,9 @@ export default function Home() {
           metalness: 0.1,
         });
         const starMesh = new THREE.Mesh(starGeom, starMat);
+        starMesh.userData = { systemName: sys.name, type: 'star' };
         sg.add(starMesh);
+        current.stars.push(starMesh);
         
         // Don't add individual lights for distant stars to avoid shader uniform limits
         // The global ambient and directional light will illuminate them
@@ -800,8 +769,16 @@ export default function Home() {
             ? Math.max(0.8, p.radius_rj ? p.radius_rj * 3 : (p.radius_re || 0) * 0.5)
             : Math.max(0.3, p.radius_rj ? p.radius_rj * 0.8 : (p.radius_re || 0) * 0.15);
           const geom = new THREE.SphereGeometry(rScene, 12, 8);
-          const color = teffColor(sys.star.teff, THREE).clone().offsetHSL(0, 0, -0.15);
-          const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.2, roughness: 0.4 });
+          const color = planetTempColor(p.pl_eqt, THREE);
+          
+          // Create gradient texture for the planet
+          const planetTexture = createPlanetTexture(color);
+          
+          const mat = new THREE.MeshStandardMaterial({ 
+            map: planetTexture,
+            metalness: 0.2, 
+            roughness: 0.6 
+          });
           const m = new THREE.Mesh(geom, mat);
           (m as any).userData = {
             ...p,
@@ -908,6 +885,11 @@ export default function Home() {
 
     function selectStar(starMesh: any) {
       const systemName = starMesh.userData.systemName;
+      
+      // Set the selected star name in state
+      setSelectedStar(systemName);
+      setActive(systemName); // Update the title bar to show star name
+      
       // Get world position of the star
       const wp = new THREE.Vector3();
       starMesh.getWorldPosition(wp);
@@ -960,6 +942,9 @@ export default function Home() {
         `;
       }
       
+      // Update title subtitle
+      setTitleSub("Star selected");
+      
       // Show toast notification
       showToast(`Selected ${systemName}`);
     }
@@ -967,8 +952,70 @@ export default function Home() {
     function tick() {
       sceneRef.current!.raf = requestAnimationFrame(tick);
       const dt = clock.getDelta();
+      
+      // Keyboard-based camera movement
+      const moveSpeed = keys.shift ? 100 : 50; // Hold Shift for faster movement
+      const moveAmount = moveSpeed * dt;
+      
+      // Get camera direction vectors
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0; // Keep movement on horizontal plane for W/S
+      forward.normalize();
+      
+      const right = new THREE.Vector3();
+      right.crossVectors(forward, camera.up).normalize();
+      
+      // WASD or Arrow keys for movement
+      if (keys.w || keys.arrowup) {
+        camera.position.addScaledVector(forward, moveAmount);
+        const newTarget = forward.clone().multiplyScalar(moveAmount);
+        controls.target.set(
+          controls.target.x + newTarget.x,
+          controls.target.y + newTarget.y,
+          controls.target.z + newTarget.z
+        );
+      }
+      if (keys.s || keys.arrowdown) {
+        camera.position.addScaledVector(forward, -moveAmount);
+        const newTarget = forward.clone().multiplyScalar(-moveAmount);
+        controls.target.set(
+          controls.target.x + newTarget.x,
+          controls.target.y + newTarget.y,
+          controls.target.z + newTarget.z
+        );
+      }
+      if (keys.a || keys.arrowleft) {
+        camera.position.addScaledVector(right, -moveAmount);
+        const newTarget = right.clone().multiplyScalar(-moveAmount);
+        controls.target.set(
+          controls.target.x + newTarget.x,
+          controls.target.y + newTarget.y,
+          controls.target.z + newTarget.z
+        );
+      }
+      if (keys.d || keys.arrowright) {
+        camera.position.addScaledVector(right, moveAmount);
+        const newTarget = right.clone().multiplyScalar(moveAmount);
+        controls.target.set(
+          controls.target.x + newTarget.x,
+          controls.target.y + newTarget.y,
+          controls.target.z + newTarget.z
+        );
+      }
+      
+      // Q/E for vertical movement
+      if (keys.q) {
+        camera.position.y -= moveAmount;
+        controls.target.set(controls.target.x, controls.target.y - moveAmount, controls.target.z);
+      }
+      if (keys.e) {
+        camera.position.y += moveAmount;
+        controls.target.set(controls.target.x, controls.target.y + moveAmount, controls.target.z);
+      }
+      
       controls.update();
-      const timeFactor = speed || 1;
+      const timeFactor = speedRef.current; // Allow 0 to stop planets
       
       // Animate sun fire effects
       if ((current as any).sunFlares) {
@@ -1011,8 +1058,8 @@ export default function Home() {
       for (const m of current.planets) {
         const p: any = (m as any).userData;
         const e = Math.min(0.95, Math.max(0, p.e || 0));
-        // Slow down planet orbital motion by factor of 10
-        const orbitalSlowdown = 10;
+        // Slowdown factor for reasonable orbital motion
+        const orbitalSlowdown = 20; // Adjust for slower, more realistic motion
         p.M += (timeFactor * dt * (2 * Math.PI)) / (p.period_days * orbitalSlowdown); // mean anomaly advance
         const v = trueAnomaly(p.M, e);
         const a = (p.aU = scaleAU(p.a_au, logScale));
@@ -1043,13 +1090,11 @@ export default function Home() {
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       ray.setFromCamera(mouse, camera);
       
-      // In explore mode, check for star clicks first
-      if (mode === "explore" && current.stars.length > 0) {
-        const starHits = ray.intersectObjects(current.stars, false);
-        if (starHits.length) {
-          selectStar(starHits[0].object);
-          return;
-        }
+      // Check for star clicks first
+      const starHits = ray.intersectObjects(current.stars, false);
+      if (starHits.length) {
+        selectStar(starHits[0].object as any);
+        return;
       }
       
       // Check for planet clicks
@@ -1068,7 +1113,6 @@ export default function Home() {
       current,
       clock,
       buildSystem,
-      buildExplore,
       buildEarthCentered,
       selectPlanet,
       selectStar,
@@ -1079,6 +1123,8 @@ export default function Home() {
     return () => {
       cancelAnimationFrame(sceneRef.current?.raf || 0);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
       renderer.dispose();
       // Remove global light and its target to avoid leaks
       scene.remove(globalLight);
@@ -1111,15 +1157,6 @@ export default function Home() {
   useEffect(() => {
     const s = sceneRef.current;
     if (!s?.current.group || !data.length) return;
-    if (mode === "explore") {
-      // Rebuild explore scene using current options
-      // Clear details on rebuild
-      if (detailsRef.current)
-        detailsRef.current.textContent =
-          "Select a planet to see parameters and evidence.";
-      s.buildExplore(data);
-      return;
-    }
     if (mode === "earth") {
       // Rebuild Earth-centered scene
       if (detailsRef.current)
@@ -1184,6 +1221,10 @@ export default function Home() {
   function resetCam() {
     const s = sceneRef.current;
     if (!s) return;
+    
+    // Clear selected star when resetting camera
+    setSelectedStar(null);
+    
     if (mode === "explore") {
       s.camera.position.set(0, 600, 1200);
       s.controls.target.set(0, 0, 0);
@@ -1203,8 +1244,7 @@ export default function Home() {
   }
 
   const speedVal = useMemo(() => speed.toFixed(2) + "×", [speed]);
-  const sizeVal = useMemo(() => sizeScale.toFixed(2) + "×", [sizeScale]);
-  const modeLabel = mode === "explore" ? "Explore" : mode === "earth" ? "Solar System" : "System";
+  const modeLabel = mode === "earth" ? "Solar System" : "System";
 
   // Fullscreen toggle
   const [isFS, setIsFS] = useState(false);
@@ -1220,16 +1260,6 @@ export default function Home() {
     } else {
       (document.exitFullscreen || (document as any).webkitExitFullscreen || (document as any).msExitFullscreen)?.call(document);
     }
-  }
-
-  function handleExplore() {
-    setMode((m) => {
-      if (m === "earth") return "explore";
-      if (m === "explore") return "system";
-      return "earth";
-    });
-    // A toast to indicate mode; actual rebuild handled by options effect and initial init
-    showToast("Toggled view mode");
   }
 
   return (
@@ -1267,11 +1297,8 @@ export default function Home() {
           onSpeed={setSpeed}
           speedVal={speedVal}
           onReset={resetCam}
-          sizeScale={sizeScale}
-          onSizeScale={setSizeScale}
-          sizeVal={sizeVal}
           modeLabel={modeLabel}
-          onExplore={handleExplore}
+          selectedStar={selectedStar}
         />
         <TitleBar system={active} sub={titleSub} />
         <button
@@ -1286,8 +1313,6 @@ export default function Home() {
           line1={
             mode === "earth" ? (
               <>Sun at center • Earth orbits • Stars positioned by RA/Dec</>
-            ) : mode === "explore" ? (
-              <>Earth at center • Stars with planets distributed in 3D</>
             ) : (
               <>
                 Size ∝ radius • Color ∝ T<sub>eff</sub>
@@ -1297,8 +1322,6 @@ export default function Home() {
           line2={
             mode === "earth" ? (
               <>Heliocentric view • Exoplanet systems at celestial coordinates</>
-            ) : mode === "explore" ? (
-              <>Color ≈ star Tₑff • Size ≈ planet radius</>
             ) : (
               <>Speed via Kepler's 2nd law</>
             )
