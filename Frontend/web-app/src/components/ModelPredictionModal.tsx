@@ -19,7 +19,6 @@ export default function ModelPredictionModal({
       setStage("loading");
       setProgress(0);
 
-      // Simulate loading progress over 5 seconds
       const interval = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 100) {
@@ -27,7 +26,7 @@ export default function ModelPredictionModal({
             clearInterval(interval);
             return 100;
           }
-          return prev + 2; // Increment by 2% every 100ms (5 seconds total)
+          return prev + 2; 
         });
       }, 100);
 
@@ -72,7 +71,7 @@ export default function ModelPredictionModal({
               </div>
               <h2>Exoplanet Confirmed!</h2>
               <div className="accuracy-display">
-                <span className="accuracy-label">Accuracy:</span>
+                <span className="accuracy-label">Probability:</span>
                 <span className="accuracy-value">92.67%</span>
               </div>
               <p>Would you like to show it in the space?</p>
